@@ -16,17 +16,31 @@ use syn::{
     parse_macro_input, Expr, Result, Token,
 };
 
-struct LookupInput {
+struct MapInput {
     name: Expr,
     pairs: Punctuated<KeyValue, Token![,]>,
 }
 
-impl Parse for LookupInput {
+struct SetInput {
+    name: Expr,
+    pairs: Punctuated<Key, Token![,]>,
+}
+
+impl Parse for MapInput {
     fn parse(input: ParseStream) -> Result<Self> {
         let name: Expr = input.parse()?;
         input.parse::<Token![,]>()?;
         let pairs = input.parse_terminated(KeyValue::parse, Token![,])?;
-        Ok(LookupInput { name, pairs })
+        Ok(MapInput { name, pairs })
+    }
+}
+
+impl Parse for SetInput {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let name: Expr = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let pairs = input.parse_terminated(Key::parse, Token![,])?;
+        Ok(SetInput { name, pairs })
     }
 }
 
@@ -44,6 +58,17 @@ impl Parse for KeyValue {
     }
 }
 
+struct Key {
+    key: LitStr,
+}
+
+impl Parse for Key {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let key: LitStr = input.parse()?;
+        Ok(Key { key })
+    }
+}
+
 enum Algorithm {
     Position { idx: usize },
     Xor { idx1: usize, idx2: usize },
@@ -52,43 +77,65 @@ enum Algorithm {
 
 struct Table<'x> {
     pub algorithm: Algorithm,
+    pub is_map: bool,
     pub positions: Vec<(u8, &'x str, &'x Expr)>,
+}
+
+struct KeySizeMap<'x> {
+    map: BTreeMap<usize, HashMap<String, &'x Expr>>,
+    min_key_size: usize,
+    max_key_size: usize,
+}
+
+impl<'x> KeySizeMap<'x> {
+    fn build(options: &'x HashMap<String, &'x Expr>) -> Self {
+        let mut map: BTreeMap<usize, HashMap<String, &Expr>> = BTreeMap::new();
+        let mut min_key_size = usize::MAX;
+        let mut max_key_size = 0;
+
+        for (key, value) in options {
+            let key_size = key.len();
+            min_key_size = min_key_size.min(key_size);
+            max_key_size = max_key_size.max(key_size);
+            map.entry(key_size)
+                .or_default()
+                .insert(key.to_string(), value);
+        }
+
+        KeySizeMap {
+            map,
+            min_key_size,
+            max_key_size,
+        }
+    }
 }
 
 #[proc_macro]
 pub fn map(input: TokenStream) -> TokenStream {
-    let LookupInput { name, pairs } = parse_macro_input!(input);
+    let MapInput { name, pairs } = parse_macro_input!(input);
 
     let options = pairs
         .iter()
         .map(|kv| (kv.key.value(), &kv.value))
         .collect::<HashMap<_, _>>();
 
-    let mut map: BTreeMap<usize, HashMap<String, &Expr>> = BTreeMap::new();
-    let mut min_key_size = usize::MAX;
-    let mut max_key_size = 0;
-
-    for (key, value) in &options {
-        let key_size = key.len();
-        min_key_size = min_key_size.min(key_size);
-        max_key_size = max_key_size.max(key_size);
-        map.entry(key_size)
-            .or_default()
-            .insert(key.to_string(), *value);
-    }
+    let size_map = KeySizeMap::build(&options);
 
     // Try building a simple lookup table
-    if let Some(table) = try_hash(&options, min_key_size) {
+    if let Some(table) = try_hash(&options, size_map.min_key_size) {
+        let min = size_map.min_key_size;
+        let max = size_map.max_key_size;
+
         TokenStream::from(quote! {
-           let key = #name;
-           if key.len() >= #min_key_size && key.len() <= #max_key_size {
+           {let key = #name;
+           if key.len() >= #min && key.len() <= #max {
                #table
            } else {
                None
-           }
+           }}
         })
     } else {
-        let match_arms = map.iter().map(|(size, keys)| {
+        let match_arms = size_map.map.iter().map(|(size, keys)| {
             if keys.len() == 1 {
                 let (key, value) = keys.iter().next().unwrap();
                 quote! { #size if key == #key.as_bytes() => Some(#value), }
@@ -108,11 +155,67 @@ pub fn map(input: TokenStream) -> TokenStream {
     }
 }
 
+#[proc_macro]
+pub fn set(input: TokenStream) -> TokenStream {
+    let SetInput { name, pairs } = parse_macro_input!(input);
+    let true_ = syn::Expr::Lit(syn::ExprLit {
+        attrs: vec![],
+        lit: syn::Lit::Bool(syn::LitBool {
+            value: true,
+            span: proc_macro2::Span::call_site(),
+        }),
+    });
+
+    let options = pairs
+        .iter()
+        .map(|kv| (kv.key.value(), &true_))
+        .collect::<HashMap<_, _>>();
+
+    let size_map = KeySizeMap::build(&options);
+
+    // Try building a simple lookup table
+    if let Some(mut table) = try_hash(&options, size_map.min_key_size) {
+        table.is_map = false;
+        let min = size_map.min_key_size;
+        let max = size_map.max_key_size;
+
+        TokenStream::from(quote! {{
+           let key = #name;
+           if key.len() >= #min && key.len() <= #max {
+               #table
+           } else {
+               false
+           }
+        }})
+    } else {
+        let match_arms = size_map.map.iter().map(|(size, keys)| {
+            if keys.len() == 1 {
+                let (key, _) = keys.iter().next().unwrap();
+                quote! { #size if key == #key.as_bytes() => true, }
+            } else {
+                let mut table =
+                    try_hash(keys, *size).expect("Failed to build lookup table for keys");
+                table.is_map = false;
+                quote! { #size => { #table } }
+            }
+        });
+
+        TokenStream::from(quote! {{
+           let key = #name;
+           match key.len() {
+               #(#match_arms)*
+               _ => false,
+           }
+        }})
+    }
+}
+
 fn try_hash<'x>(keys: &'x HashMap<String, &'x Expr>, size: usize) -> Option<Table<'x>> {
     // Use direct mapping
     if size == 1 {
         return Some(Table {
             algorithm: Algorithm::Position { idx: 0 },
+            is_map: true,
             positions: keys
                 .iter()
                 .collect::<BTreeMap<_, _>>()
@@ -131,6 +234,7 @@ fn try_hash<'x>(keys: &'x HashMap<String, &'x Expr>, size: usize) -> Option<Tabl
         if byte_set.len() == keys.len() {
             return Some(Table {
                 algorithm: Algorithm::Position { idx },
+                is_map: true,
                 positions: keys
                     .iter()
                     .collect::<BTreeMap<_, _>>()
@@ -151,6 +255,7 @@ fn try_hash<'x>(keys: &'x HashMap<String, &'x Expr>, size: usize) -> Option<Tabl
             if byte_set.len() == keys.len() {
                 return Some(Table {
                     algorithm: Algorithm::Xor { idx1: i, idx2: j },
+                    is_map: true,
                     positions: keys
                         .iter()
                         .map(|(key, value)| {
@@ -185,6 +290,7 @@ fn try_hash<'x>(keys: &'x HashMap<String, &'x Expr>, size: usize) -> Option<Tabl
         if byte_set.len() == keys.len() {
             return Some(Table {
                 algorithm: Algorithm::Fnv { seed },
+                is_map: true,
                 positions: keys
                     .iter()
                     .map(|(key, value)| {
@@ -225,22 +331,38 @@ impl quote::ToTokens for Table<'_> {
             }
         };
 
-        let match_arms = self.positions.iter().map(|(hash, key, value)| {
-            if key.len() > 1 {
-                quote! { #hash if key == #key.as_bytes() => Some(#value), }
-            } else {
-                quote! { #hash => Some(#value), }
-            }
-        });
+        if self.is_map {
+            let match_arms = self.positions.iter().map(|(hash, key, value)| {
+                if key.len() > 1 {
+                    quote! { #hash if key == #key.as_bytes() => Some(#value), }
+                } else {
+                    quote! { #hash => Some(#value), }
+                }
+            });
 
-        let expanded = quote! {
-            #algorithm
-            match hash {
-                #(#match_arms)*
-                _ => None,
-            }
-        };
+            tokens.extend(quote! {
+                #algorithm
+                match hash {
+                    #(#match_arms)*
+                    _ => None,
+                }
+            });
+        } else {
+            let match_arms = self.positions.iter().map(|(hash, key, _)| {
+                if key.len() > 1 {
+                    quote! { #hash if key == #key.as_bytes() => true, }
+                } else {
+                    quote! { #hash => true, }
+                }
+            });
 
-        tokens.extend(expanded);
+            tokens.extend(quote! {
+                #algorithm
+                match hash {
+                    #(#match_arms)*
+                    _ => false,
+                }
+            });
+        }
     }
 }

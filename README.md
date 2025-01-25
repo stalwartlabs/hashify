@@ -1,7 +1,6 @@
 # hashify
 
 [![crates.io](https://img.shields.io/crates/v/hashify)](https://crates.io/crates/hashify)
-[![build](https://github.com/stalwartlabs/hashify/actions/workflows/rust.yml/badge.svg)](https://github.com/stalwartlabs/hashify/actions/workflows/rust.yml)
 [![docs.rs](https://img.shields.io/docsrs/hashify)](https://docs.rs/hashify)
 [![crates.io](https://img.shields.io/crates/l/hashify)](http://www.apache.org/licenses/LICENSE-2.0)
 
