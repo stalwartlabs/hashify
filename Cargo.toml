@@ -1,6 +1,6 @@
 [package]
 name = "hashify"
-version = "0.1.1"
+version = "0.2.0"
 description = "Fast perfect hashing without dependencies"
 edition = "2021"
 authors = [ "Stalwart Labs <hello@stalw.art>"]
@@ -14,6 +14,7 @@ resolver = "2"
 
 [lib]
 proc-macro = true
+doctest = false
 
 [dependencies]
 syn = { version = "2.0", features = ["full"] }
