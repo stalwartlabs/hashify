@@ -55,7 +55,7 @@ pub fn build_map(
             &[&str]
         };
         let keys_return = quote! {
-            value.0.as_bytes() == key
+            value.as_bytes() == key
         };
         (keys_def, keys_return)
     };
