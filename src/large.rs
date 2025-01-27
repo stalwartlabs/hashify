@@ -21,6 +21,9 @@ pub fn build_map(
         keys,
     } = generate_phf(options);
 
+    let mut min_key_size = usize::MAX;
+    let mut max_key_size = 0;
+
     let keys_len = keys.len();
     let pilots_len = pilots_table.len();
     let codomain_len = (keys.len() + free.len()) as u64;
@@ -28,6 +31,14 @@ pub fn build_map(
     let free_array = free.iter().map(|x| quote!(#x));
     let keys_array = map.iter().map(|idx| {
         let (key, return_type) = &keys[*idx as usize];
+
+        if key.len() < min_key_size {
+            min_key_size = key.len();
+        }
+        if key.len() > max_key_size {
+            max_key_size = key.len();
+        }
+
         if let Some(return_type) = return_type {
             quote! {
                 (#key, #return_type)
@@ -39,7 +50,7 @@ pub fn build_map(
         }
     });
 
-    let (keys_def, keys_return) = if let Some(return_type) = return_type {
+    let (keys_def, keys_return, default_value) = if let Some(return_type) = return_type {
         let keys_def = quote! {
             &[(&str, #return_type)]
         };
@@ -55,7 +66,10 @@ pub fn build_map(
                 None
             }
         };
-        (keys_def, keys_return)
+        let default_value = quote! {
+            None
+        };
+        (keys_def, keys_return, default_value)
     } else {
         let keys_def = quote! {
             &[&str]
@@ -69,7 +83,10 @@ pub fn build_map(
                 key == value.as_bytes()
             }
         };
-        (keys_def, keys_return)
+        let default_value = quote! {
+            false
+        };
+        (keys_def, keys_return, default_value)
     };
     let c = if ignore_case {
         quote! { c.to_ascii_lowercase() }
@@ -78,25 +95,29 @@ pub fn build_map(
     };
 
     TokenStream::from(quote! {{
-       let key = #name;
-
        static PILOTS_TABLE: &[u16] = &[#(#pilots_array),*];
        static FREE: &[u32] = &[#(#free_array),*];
        static KEYS: #keys_def = &[#(#keys_array),*];
 
-       let key_hash = key.iter().fold(#seed, |h, &c| {
-           h.wrapping_mul(0x0100_0000_01b3).wrapping_add(#c as u64)
-       });
-       let pilot_hash = (PILOTS_TABLE[key_hash as usize % #pilots_len] as u64).wrapping_mul( 0x517cc1b727220a95);
-       let idx = ((key_hash ^ pilot_hash) % #codomain_len) as usize;
+       let key = #name;
 
-       let value = if idx < #keys_len {
-           &KEYS[idx]
-       } else {
-           &KEYS[FREE[idx - #keys_len] as usize]
-       };
+       if (#min_key_size..=#max_key_size).contains(&key.len()) {
+            let key_hash = key.iter().fold(#seed, |h, &c| {
+                h.wrapping_mul(0x0100_0000_01b3).wrapping_add(#c as u64)
+            });
+            let pilot_hash = (PILOTS_TABLE[key_hash as usize % #pilots_len] as u64).wrapping_mul( 0x517cc1b727220a95);
+            let idx = ((key_hash ^ pilot_hash) % #codomain_len) as usize;
 
-       #keys_return
+            let value = if idx < #keys_len {
+                &KEYS[idx]
+            } else {
+                &KEYS[FREE[idx - #keys_len] as usize]
+            };
+
+            #keys_return
+        } else {
+            #default_value
+        }
     }})
 }
 

@@ -25,6 +25,7 @@ pub(crate) struct Table<'x> {
     pub algorithm: Algorithm,
     pub positions: Vec<(HashValue, &'x str, Option<&'x Expr>)>,
     pub ignore_case: bool,
+    pub fnc_map: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -37,6 +38,7 @@ pub fn build_tiny_map(
     name: Expr,
     options: HashMap<String, Option<&Expr>>,
     ignore_case: bool,
+    fnc_map: bool,
 ) -> TokenStream {
     let mut map: BTreeMap<usize, HashMap<String, Option<&Expr>>> = BTreeMap::new();
     let mut min_key_size = usize::MAX;
@@ -54,20 +56,33 @@ pub fn build_tiny_map(
     }
 
     let default_value = if is_map {
-        quote! { None }
+        if !fnc_map {
+            quote! { None }
+        } else {
+            quote! { () }
+        }
     } else {
         quote! { false }
     };
 
     // Try building a simple lookup table
-    if let Some(table) = try_hash(&options, min_key_size, false, ignore_case) {
+    if let Some(table) = try_hash(&options, min_key_size, false, ignore_case, fnc_map) {
+        let else_cond = if !fnc_map {
+            quote! {
+                else {
+                    #default_value
+                }
+            }
+        } else {
+            quote! {}
+        };
+
         TokenStream::from(quote! {{
            let key = #name;
-           if key.len() >= #min_key_size && key.len() <= #max_key_size {
+
+           if (#min_key_size..=#max_key_size).contains(&key.len()) {
                #table
-           } else {
-               #default_value
-           }
+           } #else_cond
         }})
     } else {
         let match_arms = map.iter().map(|(size, keys)| {
@@ -75,7 +90,11 @@ pub fn build_tiny_map(
                 let (key, value) = keys.iter().next().unwrap();
                 let return_value = match value {
                     Some(value) => {
-                        quote! { Some(#value) }
+                        if !fnc_map {
+                            quote! { Some(#value) }
+                        } else {
+                            quote! { #value }
+                        }
                     }
                     None => quote! { true },
                 };
@@ -85,13 +104,14 @@ pub fn build_tiny_map(
                     quote! { #size if key == #key.as_bytes() => #return_value, }
                 }
             } else {
-                let table = try_hash(keys, *size, true, ignore_case).unwrap_or_else(|| {
-                    panic!(
-                        "Failed to build lookup table for {} keys: {:?}",
-                        keys.len(),
-                        keys.iter().map(|(k, _)| k).collect::<Vec<_>>()
-                    )
-                });
+                let table =
+                    try_hash(keys, *size, true, ignore_case, fnc_map).unwrap_or_else(|| {
+                        panic!(
+                            "Failed to build lookup table for {} keys: {:?}",
+                            keys.len(),
+                            keys.iter().map(|(k, _)| k).collect::<Vec<_>>()
+                        )
+                    });
                 quote! { #size => { #table } }
             }
         });
@@ -153,6 +173,7 @@ pub(crate) fn try_hash<'x>(
     size: usize,
     with_fallback: bool,
     ignore_case: bool,
+    fnc_map: bool,
 ) -> Option<Table<'x>> {
     // Use direct mapping
     if size == 1 && with_fallback {
@@ -165,6 +186,7 @@ pub(crate) fn try_hash<'x>(
                 .map(|(key, value)| (key.as_bytes()[0].into(), key.as_str(), **value))
                 .collect(),
             ignore_case,
+            fnc_map,
         });
     }
 
@@ -184,6 +206,7 @@ pub(crate) fn try_hash<'x>(
                     .map(|(key, value)| (key.as_bytes()[idx].into(), key.as_str(), **value))
                     .collect(),
                 ignore_case,
+                fnc_map,
             });
         }
     }
@@ -211,6 +234,7 @@ pub(crate) fn try_hash<'x>(
                         .map(|(key, (a, b))| (key, a, b))
                         .collect(),
                     ignore_case,
+                    fnc_map,
                 });
             }
         }
@@ -245,6 +269,7 @@ pub(crate) fn try_hash<'x>(
                         .collect(),
                     algorithm,
                     ignore_case,
+                    fnc_map,
                 });
             }
         }
@@ -280,6 +305,7 @@ pub(crate) fn try_hash<'x>(
                             .collect(),
                         algorithm,
                         ignore_case,
+                        fnc_map,
                     });
                 }
             }
@@ -378,7 +404,11 @@ impl quote::ToTokens for Table<'_> {
         let match_arms = self.positions.iter().map(|(hash, key, value)| {
             let return_value = match value {
                 Some(value) => {
-                    quote! { Some(#value) }
+                    if !self.fnc_map {
+                        quote! { Some(#value) }
+                    } else {
+                        quote! { #value }
+                    }
                 }
                 None => quote! { true },
             };
@@ -395,7 +425,11 @@ impl quote::ToTokens for Table<'_> {
         });
 
         let default_value = if self.positions.iter().any(|(_, _, value)| value.is_some()) {
-            quote! { None }
+            if !self.fnc_map {
+                quote! { None }
+            } else {
+                quote! { () }
+            }
         } else {
             quote! { false }
         };

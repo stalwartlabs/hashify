@@ -5125,6 +5125,23 @@ fn lookup_charsets_lc(key: &[u8]) -> Option<u32> {
 
 #[test]
 fn main() {
+    let mut value = 1;
+    hashify::fnc_map_ignore_case!("all".as_bytes(),
+        "ALL" => {
+           value = 2;
+        },
+        "FULL" => {
+            value = 3;
+        },
+        "FAST" => {
+            value = 4;
+        },
+        "ENVELOPE" => {
+            value = 5;
+        },
+    );
+    assert_eq!(value, 2);
+
     // Single entry
     fn find(input: &[u8]) -> Option<u32> {
         hashify::tiny_map! {

@@ -179,6 +179,7 @@ pub fn tiny_map(input: TokenStream) -> TokenStream {
             .map(|kv| (kv.key.value(), Some(&kv.value)))
             .collect::<HashMap<_, _>>(),
         false,
+        false,
     )
 }
 
@@ -192,6 +193,37 @@ pub fn tiny_map_ignore_case(input: TokenStream) -> TokenStream {
             .iter()
             .map(|kv| (kv.key.value().to_lowercase(), Some(&kv.value)))
             .collect::<HashMap<_, _>>(),
+        true,
+        false,
+    )
+}
+
+#[proc_macro]
+pub fn fnc_map(input: TokenStream) -> TokenStream {
+    let MapInput { name, pairs } = parse_macro_input!(input);
+
+    build_tiny_map(
+        name,
+        pairs
+            .iter()
+            .map(|kv| (kv.key.value(), Some(&kv.value)))
+            .collect::<HashMap<_, _>>(),
+        false,
+        true,
+    )
+}
+
+#[proc_macro]
+pub fn fnc_map_ignore_case(input: TokenStream) -> TokenStream {
+    let MapInput { name, pairs } = parse_macro_input!(input);
+
+    build_tiny_map(
+        name,
+        pairs
+            .iter()
+            .map(|kv| (kv.key.value().to_lowercase(), Some(&kv.value)))
+            .collect::<HashMap<_, _>>(),
+        true,
         true,
     )
 }
@@ -207,6 +239,7 @@ pub fn tiny_set(input: TokenStream) -> TokenStream {
             .map(|kv| (kv.key.value(), None))
             .collect::<HashMap<_, _>>(),
         false,
+        false,
     )
 }
 
@@ -221,5 +254,6 @@ pub fn tiny_set_ignore_case(input: TokenStream) -> TokenStream {
             .map(|kv| (kv.key.value().to_lowercase(), None))
             .collect::<HashMap<_, _>>(),
         true,
+        false,
     )
 }
