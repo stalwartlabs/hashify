@@ -112,6 +112,29 @@ pub fn map(input: TokenStream) -> TokenStream {
                 (kv.key.value(), Some(kv.value))
             })
             .collect(),
+        false,
+    )
+}
+
+#[proc_macro]
+pub fn map_ignore_case(input: TokenStream) -> TokenStream {
+    let BigMapInput {
+        name,
+        return_type,
+        pairs,
+    } = parse_macro_input!(input);
+
+    build_map(
+        name,
+        return_type.into(),
+        pairs
+            .into_pairs()
+            .map(|kv| {
+                let kv = kv.into_value();
+                (kv.key.value().to_lowercase(), Some(kv.value))
+            })
+            .collect(),
+        true,
     )
 }
 
@@ -126,6 +149,22 @@ pub fn set(input: TokenStream) -> TokenStream {
             .into_pairs()
             .map(|kv| (kv.into_value().key.value(), None))
             .collect(),
+        false,
+    )
+}
+
+#[proc_macro]
+pub fn set_ignore_case(input: TokenStream) -> TokenStream {
+    let SetInput { name, pairs } = parse_macro_input!(input);
+
+    build_map(
+        name,
+        None,
+        pairs
+            .into_pairs()
+            .map(|kv| (kv.into_value().key.value().to_lowercase(), None))
+            .collect(),
+        true,
     )
 }
 
@@ -139,6 +178,21 @@ pub fn tiny_map(input: TokenStream) -> TokenStream {
             .iter()
             .map(|kv| (kv.key.value(), Some(&kv.value)))
             .collect::<HashMap<_, _>>(),
+        false,
+    )
+}
+
+#[proc_macro]
+pub fn tiny_map_ignore_case(input: TokenStream) -> TokenStream {
+    let MapInput { name, pairs } = parse_macro_input!(input);
+
+    build_tiny_map(
+        name,
+        pairs
+            .iter()
+            .map(|kv| (kv.key.value().to_lowercase(), Some(&kv.value)))
+            .collect::<HashMap<_, _>>(),
+        true,
     )
 }
 
@@ -152,5 +206,20 @@ pub fn tiny_set(input: TokenStream) -> TokenStream {
             .iter()
             .map(|kv| (kv.key.value(), None))
             .collect::<HashMap<_, _>>(),
+        false,
+    )
+}
+
+#[proc_macro]
+pub fn tiny_set_ignore_case(input: TokenStream) -> TokenStream {
+    let SetInput { name, pairs } = parse_macro_input!(input);
+
+    build_tiny_map(
+        name,
+        pairs
+            .iter()
+            .map(|kv| (kv.key.value().to_lowercase(), None))
+            .collect::<HashMap<_, _>>(),
+        true,
     )
 }

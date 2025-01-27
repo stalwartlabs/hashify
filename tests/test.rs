@@ -4968,8 +4968,164 @@ fn lookup_charsets(key: &[u8]) -> Option<u32> {
     }
 }
 
+fn lookup_charsets_lc(key: &[u8]) -> Option<u32> {
+    hashify::tiny_map_ignore_case! {
+    key,
+    "koi8_r" => 35,
+    "windows_1253" => 97,
+    "windows_1257" => 114,
+    "iso_8859_10" => 69,
+    "windows_1251" => 70,
+    "ks_c_5601_1989" => 64,
+    "cswindows1255" => 71,
+    "windows_1254" => 78,
+    "csiso885916" => 66,
+    "iso_8859_10:1992" => 87,
+    "iso_8859_8:1988" => 47,
+    "latin2" => 30,
+    "csiso885914" => 50,
+    "cstis620" => 88,
+    "iso_8859_5:1988" => 59,
+    "windows_1250" => 94,
+    "csisolatin5" => 108,
+    "utf_16" => 116,
+    "ms_kanji" => 133,
+    "iso_ir_148" => 22,
+    "iso_8859_2" => 118,
+    "l6" => 13,
+    "csiso2022jp" => 143,
+    "LATIN_9" => 25,
+    "l2" => 27,
+    "csisolatin3" => 119,
+    "shift_jis" => 28,
+    "cswindows1254" => 63,
+    "cspc850multilingual" => 148,
+    "cswindows1258" => 58,
+    "l10" => 38,
+    "iso_ir_100" => 89,
+    "cp850" => 20,
+    "iso_ir_101" => 32,
+    "iso_celtic" => 23,
+    "iso_8859_7:1987" => 136,
+    "latin8" => 3,
+    "latin4" => 6,
+    "csisolatin4" => 105,
+    "utf_16le" => 113,
+    "csisoLatingreek" => 103,
+    "tis_620" => 45,
+    "euc_kr" => 24,
+    "elot_928" => 46,
+    "iso_ir_127" => 142,
+    "iso_ir_199" => 65,
+    "utf_16be" => 117,
+    "cswindows1256" => 79,
+    "iso_2022_jp" => 126,
+    "ms936" => 138,
+    "gb18030" => 49,
+    "extended_unix_code_packed_format_for_japanese" => 125,
+    "iso_8859_9" => 80,
+    "iso_8859_5" => 68,
+    "l4" => 4,
+    "l5" => 8,
+    "Iso_8859_1:1987" => 95,
+    "latin6" => 15,
+    "latin1" => 1,
+    "l3" => 19,
+    "windows_936" => 93,
+    "cp936" => 26,
+    "csiso885913" => 76,
+    "ecma_114" => 130,
+    "big5" => 16,
+    "cswindows1251" => 54,
+    "greek" => 10,
+    "iso_8859_9:1989" => 81,
+    "csutf16le" => 115,
+    "cyrillic" => 34,
+    "iso_ir_144" => 29,
+    "850" => 42,
+    "l8" => 2,
+    "iso_8859_7" => 134,
+    "gbk" => 7,
+    "iso_8859_16" => 62,
+    "iso_8859_15" => 53,
+    "gb2312" => 82,
+    "windows_1256" => 91,
+    "iso_8859_3" => 100,
+    "windows_1252" => 109,
+    "iso_ir_109" => 75,
+    "866" => 31,
+    "cswindows874" => 67,
+    "cp819" => 14,
+    "euc_jp" => 33,
+    "iso_8859_16:2001" => 40,
+    "cswindows1252" => 98,
+    "cswindows1257" => 107,
+    "csmacintosh" => 139,
+    "csgbk" => 5,
+    "latin5" => 9,
+    "iso_8859_11" => 37,
+    "ibm850" => 141,
+    "latin3" => 21,
+    "arabic" => 127,
+    "windows_874" => 90,
+    "iso_8859_3:1988" => 77,
+    "ecma_118" => 121,
+    "iso_8859_2:1987" => 131,
+    "mac" => 110,
+    "l1" => 0,
+    "csgb18030" => 106,
+    "iso_ir_126" => 92,
+    "cskoi8u" => 145,
+    "csiso885915" => 56,
+    "macintosh" => 146,
+    "iso_8859_6:1987" => 111,
+    "cswindows1253" => 86,
+    "latin10" => 41,
+    "iso_8859_13" => 72,
+    "iso_8859_4" => 55,
+    "koi8_u" => 104,
+    "csbig5" => 12,
+    "csisolatin2" => 132,
+    "iso_8859_6" => 85,
+    "windows_1255" => 83,
+    "cseucpkdfmtjapanese" => 144,
+    "iso_8859_14:1998" => 44,
+    "csisolatin6" => 112,
+    "iso_8859_8" => 43,
+    "iso_ir_157" => 123,
+    "ibm819" => 135,
+    "asmo_708" => 147,
+    "csutf16be" => 122,
+    "windows_1258" => 73,
+    "iso_ir_110" => 61,
+    "ks_c_5601_1987" => 99,
+    "csshiftjis" => 18,
+    "csutf16" => 120,
+    "utf_7" => 140,
+    "csisolatin1" => 96,
+    "iso_8859_4:1988" => 52,
+    "cskoi8r" => 51,
+    "csisolatinarabic" => 101,
+    "csisolatincyrillic" => 102,
+    "cswindows1250" => 84,
+    "greek8" => 11,
+    "csisolatinhebrew" => 124,
+    "hebrew" => 60,
+    "iso_8859_1" => 36,
+    "iso_ir_138" => 39,
+    "csibm866" => 74,
+    "iso_ir_226" => 128,
+    "csutf7" => 129,
+    "cseuckr" => 57,
+    "iso_8859_14" => 48,
+    "cp866" => 17,
+    "ibm866" => 137,
+    }
+}
+
 #[test]
 fn main() {
+    // Single entry
     fn find(input: &[u8]) -> Option<u32> {
         hashify::tiny_map! {
             input,
@@ -4977,8 +5133,53 @@ fn main() {
             "m" => 2,
         }
     }
-
     assert_eq!(find(b"months"), Some(1));
+
+    // Lowercase
+    fn lc_tiny_map_lc(input: &[u8]) -> Option<u32> {
+        hashify::tiny_map_ignore_case! {
+            input,
+            "ABC" => 1,
+            "def" => 2,
+            "GHI" => 3,
+            "jKl" => 4,
+        }
+    }
+    fn lc_map_lc(input: &[u8]) -> Option<u32> {
+        hashify::map_ignore_case! {
+            input,
+            u32,
+            "ABC" => 1,
+            "def" => 2,
+            "GHI" => 3,
+            "jKl" => 4,
+        }
+        .copied()
+    }
+    fn lc_tiny_set_lc(input: &[u8]) -> bool {
+        hashify::tiny_set_ignore_case! {
+            input,
+            "ABC",
+            "def",
+            "GHI",
+            "jKl",
+        }
+    }
+    fn lc_set_lc(input: &[u8]) -> bool {
+        hashify::set_ignore_case! {
+            input,
+            "ABC",
+            "def",
+            "GHI",
+            "jKl",
+        }
+    }
+    for (idx, entry) in ["AbC", "DeF", "Ghi", "JkL"].into_iter().enumerate() {
+        assert_eq!(lc_tiny_map_lc(entry.as_bytes()), Some((idx + 1) as u32));
+        assert_eq!(lc_map_lc(entry.as_bytes()), Some((idx + 1) as u32));
+        assert!(lc_tiny_set_lc(entry.as_bytes()));
+        assert!(lc_set_lc(entry.as_bytes()));
+    }
 
     let words = WORDS.keys().copied().collect::<Vec<_>>();
     let charsets = CHARSETS.keys().copied().collect::<Vec<_>>();
@@ -5002,9 +5203,11 @@ fn main() {
 
     for charset in charsets {
         println!("Looking up charset: {:?}", charset);
+        let v = *CHARSETS.get(charset).unwrap();
+        assert_eq!(v, lookup_charsets(charset.as_bytes()).unwrap());
         assert_eq!(
-            *CHARSETS.get(charset).unwrap(),
-            lookup_charsets(charset.as_bytes()).unwrap()
+            v,
+            lookup_charsets_lc(charset.to_ascii_uppercase().as_bytes()).unwrap()
         );
     }
 }

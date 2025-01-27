@@ -11,6 +11,7 @@ pub fn build_map(
     name: Expr,
     return_type: Option<Expr>,
     options: Vec<(String, Option<Expr>)>,
+    ignore_case: bool,
 ) -> TokenStream {
     let Phf {
         seed,
@@ -42,8 +43,13 @@ pub fn build_map(
         let keys_def = quote! {
             &[(&str, #return_type)]
         };
+        let compare_fnc = if ignore_case {
+            quote! { key.eq_ignore_ascii_case(value.0.as_bytes()) }
+        } else {
+            quote! { key == value.0.as_bytes() }
+        };
         let keys_return = quote! {
-            if value.0.as_bytes() == key {
+            if #compare_fnc  {
                 Some(&value.1)
             } else {
                 None
@@ -54,10 +60,21 @@ pub fn build_map(
         let keys_def = quote! {
             &[&str]
         };
-        let keys_return = quote! {
-            value.as_bytes() == key
+        let keys_return = if ignore_case {
+            quote! {
+                key.eq_ignore_ascii_case(value.as_bytes())
+            }
+        } else {
+            quote! {
+                key == value.as_bytes()
+            }
         };
         (keys_def, keys_return)
+    };
+    let c = if ignore_case {
+        quote! { c.to_ascii_lowercase() }
+    } else {
+        quote! { c }
     };
 
     TokenStream::from(quote! {{
@@ -67,8 +84,8 @@ pub fn build_map(
        static FREE: &[u32] = &[#(#free_array),*];
        static KEYS: #keys_def = &[#(#keys_array),*];
 
-       let key_hash = key.iter().fold(#seed, |h, b| {
-           h.wrapping_mul(0x0100_0000_01b3).wrapping_add(*b as u64)
+       let key_hash = key.iter().fold(#seed, |h, &c| {
+           h.wrapping_mul(0x0100_0000_01b3).wrapping_add(#c as u64)
        });
        let pilot_hash = (PILOTS_TABLE[key_hash as usize % #pilots_len] as u64).wrapping_mul( 0x517cc1b727220a95);
        let idx = ((key_hash ^ pilot_hash) % #codomain_len) as usize;

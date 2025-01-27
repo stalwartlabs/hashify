@@ -24,16 +24,20 @@ pub(crate) enum Algorithm {
 pub(crate) struct Table<'x> {
     pub algorithm: Algorithm,
     pub positions: Vec<(HashValue, &'x str, Option<&'x Expr>)>,
+    pub ignore_case: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum HashValue {
     U8(u8),
     U16(u16),
-    U64(u64),
 }
 
-pub fn build_tiny_map(name: Expr, options: HashMap<String, Option<&Expr>>) -> TokenStream {
+pub fn build_tiny_map(
+    name: Expr,
+    options: HashMap<String, Option<&Expr>>,
+    ignore_case: bool,
+) -> TokenStream {
     let mut map: BTreeMap<usize, HashMap<String, Option<&Expr>>> = BTreeMap::new();
     let mut min_key_size = usize::MAX;
     let mut max_key_size = 0;
@@ -56,7 +60,7 @@ pub fn build_tiny_map(name: Expr, options: HashMap<String, Option<&Expr>>) -> To
     };
 
     // Try building a simple lookup table
-    if let Some(table) = try_hash(&options, min_key_size, false) {
+    if let Some(table) = try_hash(&options, min_key_size, false, ignore_case) {
         TokenStream::from(quote! {{
            let key = #name;
            if key.len() >= #min_key_size && key.len() <= #max_key_size {
@@ -75,9 +79,13 @@ pub fn build_tiny_map(name: Expr, options: HashMap<String, Option<&Expr>>) -> To
                     }
                     None => quote! { true },
                 };
-                quote! { #size if key == #key.as_bytes() => #return_value, }
+                if ignore_case {
+                    quote! { #size if key.eq_ignore_ascii_case(#key.as_bytes()) => #return_value, }
+                } else {
+                    quote! { #size if key == #key.as_bytes() => #return_value, }
+                }
             } else {
-                let table = try_hash(keys, *size, true).unwrap_or_else(|| {
+                let table = try_hash(keys, *size, true, ignore_case).unwrap_or_else(|| {
                     panic!(
                         "Failed to build lookup table for {} keys: {:?}",
                         keys.len(),
@@ -144,6 +152,7 @@ pub(crate) fn try_hash<'x>(
     keys: &'x HashMap<String, Option<&'x Expr>>,
     size: usize,
     with_fallback: bool,
+    ignore_case: bool,
 ) -> Option<Table<'x>> {
     // Use direct mapping
     if size == 1 && with_fallback {
@@ -155,6 +164,7 @@ pub(crate) fn try_hash<'x>(
                 .iter()
                 .map(|(key, value)| (key.as_bytes()[0].into(), key.as_str(), **value))
                 .collect(),
+            ignore_case,
         });
     }
 
@@ -173,6 +183,7 @@ pub(crate) fn try_hash<'x>(
                     .iter()
                     .map(|(key, value)| (key.as_bytes()[idx].into(), key.as_str(), **value))
                     .collect(),
+                ignore_case,
             });
         }
     }
@@ -199,6 +210,7 @@ pub(crate) fn try_hash<'x>(
                         .into_iter()
                         .map(|(key, (a, b))| (key, a, b))
                         .collect(),
+                    ignore_case,
                 });
             }
         }
@@ -232,6 +244,7 @@ pub(crate) fn try_hash<'x>(
                         .map(|(key, (a, b))| (key, a, b))
                         .collect(),
                     algorithm,
+                    ignore_case,
                 });
             }
         }
@@ -266,6 +279,7 @@ pub(crate) fn try_hash<'x>(
                             .map(|(key, (a, b))| (key, a, b))
                             .collect(),
                         algorithm,
+                        ignore_case,
                     });
                 }
             }
@@ -277,12 +291,26 @@ pub(crate) fn try_hash<'x>(
 
 impl quote::ToTokens for Table<'_> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let c = if self.ignore_case {
+            quote! { c.to_ascii_lowercase() }
+        } else {
+            quote! { c }
+        };
+
         let algorithm = match &self.algorithm {
             Algorithm::Position { idx } => {
-                quote! { let hash = key[#idx]; }
+                if self.ignore_case {
+                    quote! { let hash = key[#idx].to_ascii_lowercase(); }
+                } else {
+                    quote! { let hash = key[#idx]; }
+                }
             }
             Algorithm::Xor { idx1, idx2 } => {
-                quote! { let hash = key[#idx1] ^ key[#idx2]; }
+                if self.ignore_case {
+                    quote! { let hash = key[#idx1].to_ascii_lowercase() ^ key[#idx2].to_ascii_lowercase(); }
+                } else {
+                    quote! { let hash = key[#idx1] ^ key[#idx2]; }
+                }
             }
             Algorithm::Fnv { shift } => {
                 let (shift, cast) = match shift {
@@ -291,8 +319,8 @@ impl quote::ToTokens for Table<'_> {
                 };
 
                 quote! {
-                    let hash = (key.iter().fold(0x811c_9dc5u64, |h, b| {
-                        h.wrapping_mul(0x0100_0000_01b3).wrapping_add(*b as u64)
+                    let hash = (key.iter().fold(0x811c_9dc5u64, |h, &c| {
+                        h.wrapping_mul(0x0100_0000_01b3).wrapping_add(#c as u64)
                     }) #shift) as #cast;
                 }
             }
@@ -303,7 +331,7 @@ impl quote::ToTokens for Table<'_> {
                 };
 
                 quote! {
-                    let hash = (key.iter().fold(5381u64, |h, &c| h.wrapping_mul(33).wrapping_add(c as u64)) #shift) as #cast;
+                    let hash = (key.iter().fold(5381u64, |h, &c| h.wrapping_mul(33).wrapping_add(#c as u64)) #shift) as #cast;
                 }
             }
             Algorithm::Sdbm { shift } => {
@@ -313,7 +341,7 @@ impl quote::ToTokens for Table<'_> {
                 };
 
                 quote! {
-                    let hash = (key.iter().fold(0u64, |h, &c| (c as u64)
+                    let hash = (key.iter().fold(0u64, |h, &c| (#c as u64)
                     .wrapping_add(h << 6)
                     .wrapping_add(h << 16)
                     .wrapping_sub(h)) #shift) as #cast;
@@ -327,7 +355,7 @@ impl quote::ToTokens for Table<'_> {
 
                 quote! {
                     let hash = (key.iter().fold(0u64, |h, &c| {
-                        h.wrapping_add(c as u64)
+                        h.wrapping_add(#c as u64)
                             .rotate_left(10)
                             .wrapping_mul(0x7FEB352D)
                     })  #shift) as #cast;
@@ -341,7 +369,7 @@ impl quote::ToTokens for Table<'_> {
 
                 quote! {
                     let hash = (key.iter().fold(0u64, |h, &c| {
-                        (h.wrapping_mul(0x5bd1e995).rotate_left(24) ^ (c as u64)).wrapping_mul(0x5bd1e995)
+                        (h.wrapping_mul(0x5bd1e995).rotate_left(24) ^ (#c as u64)).wrapping_mul(0x5bd1e995)
                     })  #shift) as #cast;
                 }
             }
@@ -356,14 +384,10 @@ impl quote::ToTokens for Table<'_> {
             };
 
             if key.len() > 1 {
-                match hash {
-                    HashValue::U8(hash) => {
-                        quote! { #hash if key == #key.as_bytes() => #return_value, }
-                    }
-                    HashValue::U16(hash) => {
-                        quote! { #hash if key == #key.as_bytes() => #return_value, }
-                    }
-                    HashValue::U64(hash) => quote! { #hash => #return_value, },
+                if self.ignore_case {
+                    quote! { #hash if key.eq_ignore_ascii_case(#key.as_bytes()) => #return_value, }
+                } else {
+                    quote! { #hash if key == #key.as_bytes() => #return_value, }
                 }
             } else {
                 quote! { #hash => #return_value, }
@@ -390,7 +414,6 @@ impl quote::ToTokens for HashValue {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         match self {
             HashValue::U8(value) => tokens.extend(quote! { #value }),
-            HashValue::U64(value) => tokens.extend(quote! { #value }),
             HashValue::U16(value) => tokens.extend(quote! { #value }),
         }
     }
@@ -399,11 +422,5 @@ impl quote::ToTokens for HashValue {
 impl From<u8> for HashValue {
     fn from(value: u8) -> Self {
         HashValue::U8(value)
-    }
-}
-
-impl From<u64> for HashValue {
-    fn from(value: u64) -> Self {
-        HashValue::U64(value)
     }
 }
