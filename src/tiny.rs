@@ -146,7 +146,7 @@ pub(crate) fn try_hash<'x>(
     with_fallback: bool,
 ) -> Option<Table<'x>> {
     // Use direct mapping
-    if size == 1 {
+    if size == 1 && with_fallback {
         return Some(Table {
             algorithm: Algorithm::Position { idx: 0 },
             positions: keys
@@ -239,7 +239,7 @@ pub(crate) fn try_hash<'x>(
 
     // Fallback to larger hash values
     if with_fallback && size <= u16::MAX as usize {
-        for shift in 9..=11 {
+        for shift in 9..=16 {
             for algorithm in [
                 Algorithm::Fnv { shift: Some(shift) },
                 Algorithm::Djb2 { shift: Some(shift) },

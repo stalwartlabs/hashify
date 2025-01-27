@@ -4970,6 +4970,16 @@ fn lookup_charsets(key: &[u8]) -> Option<u32> {
 
 #[test]
 fn main() {
+    fn find(input: &[u8]) -> Option<u32> {
+        hashify::tiny_map! {
+            input,
+            "months" => 1,
+            "m" => 2,
+        }
+    }
+
+    assert_eq!(find(b"months"), Some(1));
+
     let words = WORDS.keys().copied().collect::<Vec<_>>();
     let charsets = CHARSETS.keys().copied().collect::<Vec<_>>();
     let entities = ENTITIES.keys().copied().collect::<Vec<_>>();
