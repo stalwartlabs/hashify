@@ -10,7 +10,7 @@ use quote::quote;
 pub fn build_map(
     name: Expr,
     return_type: Option<Expr>,
-    options: Vec<(String, Option<Expr>)>,
+    options: Vec<(Key, Option<Expr>)>,
     ignore_case: bool,
 ) -> TokenStream {
     let Phf {
@@ -52,12 +52,12 @@ pub fn build_map(
 
     let (keys_def, keys_return, default_value) = if let Some(return_type) = return_type {
         let keys_def = quote! {
-            &[(&str, #return_type)]
+            &[(&[u8], #return_type)]
         };
         let compare_fnc = if ignore_case {
-            quote! { key.eq_ignore_ascii_case(value.0.as_bytes()) }
+            quote! { __key.eq_ignore_ascii_case(value.0) }
         } else {
-            quote! { key == value.0.as_bytes() }
+            quote! { __key == value.0 }
         };
         let keys_return = quote! {
             if #compare_fnc  {
@@ -72,15 +72,15 @@ pub fn build_map(
         (keys_def, keys_return, default_value)
     } else {
         let keys_def = quote! {
-            &[&str]
+            &[&[u8]]
         };
         let keys_return = if ignore_case {
             quote! {
-                key.eq_ignore_ascii_case(value.as_bytes())
+                __key.eq_ignore_ascii_case(value)
             }
         } else {
             quote! {
-                key == value.as_bytes()
+                __key == value
             }
         };
         let default_value = quote! {
@@ -99,10 +99,10 @@ pub fn build_map(
        static FREE: &[u32] = &[#(#free_array),*];
        static KEYS: #keys_def = &[#(#keys_array),*];
 
-       let key = #name;
+       let __key = #name;
 
-       if (#min_key_size..=#max_key_size).contains(&key.len()) {
-            let key_hash = key.iter().fold(#seed, |h, &c| {
+       if (#min_key_size..=#max_key_size).contains(&__key.len()) {
+            let key_hash = __key.iter().fold(#seed, |h, &c| {
                 h.wrapping_mul(0x0100_0000_01b3).wrapping_add(#c as u64)
             });
             let pilot_hash = (PILOTS_TABLE[key_hash as usize % #pilots_len] as u64).wrapping_mul( 0x517cc1b727220a95);
@@ -129,6 +129,8 @@ pub fn build_map(
 
 use syn::Expr;
 
+use crate::Key;
+
 const MAX_ALPHA: f64 = 0.99;
 const MIN_C: f64 = 1.5;
 
@@ -143,7 +145,7 @@ pub struct Phf {
     pub pilots_table: Vec<u16>,
     pub map: Vec<u32>,
     pub free: Vec<u32>,
-    pub keys: Vec<(String, Option<Expr>)>,
+    pub keys: Vec<(Key, Option<Expr>)>,
 }
 
 #[inline]
@@ -173,7 +175,7 @@ pub fn get_index(key_hash: u64, pilot_hash: u64, codomain_len: u64) -> usize {
 /// # Panics
 ///
 /// Panics if `entries` contains a duplicate key.
-pub fn generate_phf(keys: Vec<(String, Option<Expr>)>) -> Phf {
+pub fn generate_phf(keys: Vec<(Key, Option<Expr>)>) -> Phf {
     if keys.is_empty() {
         return Phf {
             seed: 0,
@@ -209,7 +211,7 @@ pub fn generate_phf(keys: Vec<(String, Option<Expr>)>) -> Phf {
 }
 
 fn try_generate_phf(
-    entries: &[(String, Option<Expr>)],
+    entries: &[(Key, Option<Expr>)],
     buckets_len: u64,
     codomain_len: u64,
     seed: u64,

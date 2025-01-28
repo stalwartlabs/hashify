@@ -5139,6 +5139,9 @@ fn main() {
         "ENVELOPE" => {
             value = 5;
         },
+        _ => {
+            value = 6;
+        }
     );
     assert_eq!(value, 2);
 

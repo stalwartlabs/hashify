@@ -18,21 +18,23 @@ _hashify_ was designed with performance as a top priority, and its benchmarks de
 
 ## Features
 
-- **Perfect Hashing**: Generates collision-free lookup tables for your data at compile time.
+- **Perfect Hashing**: Generates collision-free lookup tables for your **maps**, **sets** and **functions** at compile time.
 - **No Runtime Dependencies**: Everything is computed at compile time, making it ideal for environments where performance and binary size matter.
 - **Multiple hashing strategies**: _Tiny maps_ for datasets smaller than 500 entries and _large maps_ using the PTHash Minimal Perfect Hashing algorithm.
 - **Fast**: Tiny maps are over **4x faster** than the CHD algorithm, while large maps are approximately **40% faster**.
 
 ## Limitations
 
-_hashify_, since it uses the [Fowler–Noll–Vo 1a](https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function#FNV-1a_hash) hashing algorithm, is designed to work best with maps consisting of short strings. This makes it highly efficient for such datasets, but it may not perform as well with longer or more complex keys. However, modifying the crate to use other hashing algorithms is trivial, and we invite those interested in alternative algorithms to open a GitHub issue to discuss and potentially add support for other hashing options.
+_hashify_, since it uses the [Fowler–Noll–Vo 1a](https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function#FNV-1a_hash) hashing algorithm, is designed to work best with maps consisting of short byte slices (1 to 50 bytes). This makes it highly efficient for such datasets, but it may not perform as well with longer or more complex keys. However, modifying the crate to use other hashing algorithms is trivial, and we invite those interested in alternative algorithms to open a GitHub issue to discuss and potentially add support for other hashing options.
 
 ## Usage Example
 
+Maps:
+
 ```rust
-fn tiny_charsets(key: &[u8]) -> Option<u32> {
+fn tiny_map_get(key: &str) -> Option<u32> {
     hashify::tiny_map! {
-        key,
+        key.as_bytes(),
         "koi8_r" => 35,
         "windows_1253" => 97,
         "windows_1257" => 114,
@@ -42,9 +44,9 @@ fn tiny_charsets(key: &[u8]) -> Option<u32> {
     }
 }
 
-fn large_charsets(key: &[u8]) -> Option<&u32> {
+fn large_map_get(key: &str) -> Option<&u32> {
     hashify::map! {
-        key,
+        key.as_bytes(),
         u32,
         "koi8_r" => 35,
         "windows_1253" => 97,
@@ -56,8 +58,49 @@ fn large_charsets(key: &[u8]) -> Option<&u32> {
 }
 
 fn main() {
-    assert_eq!(tiny_charsets("koi8_r".as_bytes()), Some(35));
-    assert_eq!(large_charsets("koi8_r".as_bytes()), Some(35));
+    assert_eq!(tiny_map_get("koi8_r"), Some(35));
+    assert_eq!(large_map_get("koi8_r"), Some(35));
+}
+```
+
+Sets:
+
+```rust
+fn tiny_set_contains(prefix: &str) -> bool {
+    hashify::tiny_set! { prefix.as_bytes(),"re", "res", "sv", "antw", "ref", "aw", "απ", "השב", "vá", "r", "rif", "bls", "odp", "ynt", "atb", "رد", "回复", "转发", }
+}
+
+fn large_set_contains(prefix: &str) -> bool {
+    hashify::set! { prefix.as_bytes(), "fwd", "fw", "rv","enc", "vs", "doorst", "vl", "tr", "wg", "πρθ", "הועבר", "továbbítás", "i", "fs", "trs", "vb", "pd", "i̇lt", "yml", "إعادة توجيه", "回覆", "轉寄", }
+}
+
+fn main() {
+    assert!(tiny_set_contains("回复"));
+    assert!(large_set_contains("továbbítás"));
+}
+```
+
+Function maps:
+
+```rust
+fn main() {
+    hashify::fnc_map_ignore_case!(input.as_bytes(),
+        "ALL" => {
+            println!("All");
+        },
+        "FULL" => {
+            println!("Full");
+        },
+        "FAST" => {
+            println!("Fast");
+        },
+        "ENVELOPE" => {
+            println!("Envelope");
+        },
+        _ => {
+            eprintln!("Unknown command {input}");
+        }
+    );
 }
 ```
 
