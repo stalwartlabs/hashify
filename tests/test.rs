@@ -5155,6 +5155,51 @@ fn main() {
     }
     assert_eq!(find(b"months"), Some(1));
 
+    // Sets
+    fn tiny_set(input: &str) -> bool {
+        hashify::tiny_set!(
+            input.as_bytes(),
+            "a",
+            "about",
+            "above",
+            "after",
+            "again",
+            "against",
+            "ain",
+            "all",
+            "am",
+            "an",
+            "and",
+            "any",
+            "are",
+            "aren",
+            "aren't",
+        )
+    }
+
+    fn large_set(input: &str) -> bool {
+        hashify::set!(
+            input.as_bytes(),
+            "a",
+            "about",
+            "above",
+            "after",
+            "again",
+            "against",
+            "ain",
+            "all",
+            "am",
+            "an",
+            "and",
+            "any",
+            "are",
+            "aren",
+            "aren't",
+        )
+    }
+    assert!(tiny_set("an"));
+    assert!(large_set("an"));
+
     // Lowercase
     fn lc_tiny_map_lc(input: &[u8]) -> Option<u32> {
         hashify::tiny_map_ignore_case! {

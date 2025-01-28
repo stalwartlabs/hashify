@@ -57,7 +57,7 @@ pub fn build_map(
         let compare_fnc = if ignore_case {
             quote! { __key.eq_ignore_ascii_case(value.0) }
         } else {
-            quote! { __key == value.0 }
+            quote! { __key.eq(value.0) }
         };
         let keys_return = quote! {
             if #compare_fnc  {
@@ -76,11 +76,11 @@ pub fn build_map(
         };
         let keys_return = if ignore_case {
             quote! {
-                __key.eq_ignore_ascii_case(value)
+                __key.eq_ignore_ascii_case(*value)
             }
         } else {
             quote! {
-                __key == value
+                __key.eq(*value)
             }
         };
         let default_value = quote! {
