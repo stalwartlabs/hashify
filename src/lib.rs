@@ -19,7 +19,7 @@ mod tiny;
 
 use proc_macro::TokenStream;
 use proc_macro2::Span;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use syn::punctuated::Punctuated;
 use syn::{Error, ExprLit, Lit, LitByteStr, UnOp};
 use syn::{
@@ -242,7 +242,7 @@ pub fn tiny_map(input: TokenStream) -> TokenStream {
         pairs
             .iter()
             .map(|kv| (&kv.key, Value::Some(&kv.value)))
-            .collect::<HashMap<_, _>>(),
+            .collect::<BTreeMap<_, _>>(),
         Value::None,
         false,
     )
@@ -261,7 +261,7 @@ pub fn tiny_map_ignore_case(input: TokenStream) -> TokenStream {
         lower_pairs
             .iter()
             .map(|(key, value)| (key, Value::Some(value)))
-            .collect::<HashMap<_, _>>(),
+            .collect::<BTreeMap<_, _>>(),
         Value::None,
         true,
     )
@@ -280,7 +280,7 @@ pub fn fnc_map(input: TokenStream) -> TokenStream {
         pairs
             .iter()
             .map(|kv| (&kv.key, Value::Expr(&kv.value)))
-            .collect::<HashMap<_, _>>(),
+            .collect::<BTreeMap<_, _>>(),
         Value::Expr(&default),
         false,
     )
@@ -304,7 +304,7 @@ pub fn fnc_map_ignore_case(input: TokenStream) -> TokenStream {
         lower_pairs
             .iter()
             .map(|(key, value)| (key, Value::Expr(value)))
-            .collect::<HashMap<_, _>>(),
+            .collect::<BTreeMap<_, _>>(),
         Value::Expr(&default),
         true,
     )
@@ -319,7 +319,7 @@ pub fn tiny_set(input: TokenStream) -> TokenStream {
         pairs
             .iter()
             .map(|kv| (kv, Value::True))
-            .collect::<HashMap<_, _>>(),
+            .collect::<BTreeMap<_, _>>(),
         Value::False,
         false,
     )
@@ -339,7 +339,7 @@ pub fn tiny_set_ignore_case(input: TokenStream) -> TokenStream {
         lower_pairs
             .iter()
             .map(|key| (key, Value::True))
-            .collect::<HashMap<_, _>>(),
+            .collect::<BTreeMap<_, _>>(),
         Value::False,
         true,
     )

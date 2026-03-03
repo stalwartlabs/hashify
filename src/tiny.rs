@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 use proc_macro::TokenStream;
 use quote::quote;
@@ -38,11 +38,11 @@ pub(crate) enum Value<'x> {
 
 pub fn build_tiny_map(
     name: Expr,
-    options: HashMap<&Key, Value>,
+    options: BTreeMap<&Key, Value>,
     default: Value,
     ignore_case: bool,
 ) -> TokenStream {
-    let mut map: BTreeMap<usize, HashMap<&Key, Value>> = BTreeMap::new();
+    let mut map: BTreeMap<usize, BTreeMap<&Key, Value>> = BTreeMap::new();
     let mut min_key_size = usize::MAX;
     let mut max_key_size = 0;
 
@@ -151,7 +151,7 @@ impl Algorithm {
 }
 
 pub(crate) fn try_hash<'x>(
-    keys: &HashMap<&'x Key, Value<'x>>,
+    keys: &BTreeMap<&'x Key, Value<'x>>,
     default: &Value<'x>,
     size: usize,
     is_final_pass: bool,
@@ -176,7 +176,7 @@ pub(crate) fn try_hash<'x>(
     let mut best_match_count = 0;
     let mut best_match_algo = Algorithm::Position { idx: 0 };
     for idx in 0..size {
-        let mut byte_set = HashSet::new();
+        let mut byte_set = BTreeSet::new();
         let algorithm = Algorithm::Position { idx };
         for key in keys.keys() {
             byte_set.insert(algorithm.hash(key.as_bytes()));
@@ -202,7 +202,7 @@ pub(crate) fn try_hash<'x>(
     // Try XORing key positions
     for i in 0..size {
         for j in i + 1..size {
-            let mut byte_set = HashSet::new();
+            let mut byte_set = BTreeSet::new();
             let algorithm = Algorithm::Xor { idx1: i, idx2: j };
             for key in keys.keys() {
                 byte_set.insert(algorithm.hash(key.as_bytes()));
@@ -228,11 +228,11 @@ pub(crate) fn try_hash<'x>(
     }
 
     if is_final_pass {
-        let mut key_groups = HashMap::new();
+        let mut key_groups = BTreeMap::new();
         for (key, value) in keys {
             key_groups
                 .entry(best_match_algo.hash(key.as_bytes()))
-                .or_insert_with(HashMap::new)
+                .or_insert_with(BTreeMap::new)
                 .insert(*key, value.clone());
         }
         let mut table = Table {
