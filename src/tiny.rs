@@ -162,10 +162,7 @@ pub(crate) fn try_hash<'x>(
             algorithm: Algorithm::Position { idx: 0 },
             positions: keys
                 .iter()
-                .map(|(k, v)| (k, v))
-                .collect::<IndexMap<_, _>>()
-                .iter()
-                .map(|(key, value)| (key.as_bytes()[0], **key, (*value).clone()))
+                .map(|(key, value)| (key.as_bytes()[0], *key, (*value).clone()))
                 .collect(),
             ignore_case,
             default: default.clone(),
@@ -185,10 +182,7 @@ pub(crate) fn try_hash<'x>(
             return Some(Table {
                 positions: keys
                     .iter()
-                    .map(|(k, v)| (k, v))
-                    .collect::<IndexMap<_, _>>()
-                    .iter()
-                    .map(|(key, value)| (algorithm.hash(key.as_bytes()), **key, (*value).clone()))
+                    .map(|(key, value)| (algorithm.hash(key.as_bytes()), *key, (*value).clone()))
                     .collect(),
                 algorithm,
                 ignore_case,
@@ -212,10 +206,7 @@ pub(crate) fn try_hash<'x>(
                 return Some(Table {
                     positions: keys
                         .iter()
-                        .map(|(key, value)| (algorithm.hash(key.as_bytes()), (*key, value.clone())))
-                        .collect::<IndexMap<_, _>>()
-                        .into_iter()
-                        .map(|(key, (a, b))| (key, a, b))
+                        .map(|(key, value)| (algorithm.hash(key.as_bytes()), *key, value.clone()))
                         .collect(),
                     algorithm,
                     ignore_case,
