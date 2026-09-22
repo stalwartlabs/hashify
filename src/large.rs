@@ -4,31 +4,54 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-use proc_macro::TokenStream;
-use quote::quote;
+use proc_macro2::{Ident, Span, TokenStream};
+use quote::{ToTokens, quote};
 
 pub fn build_map(
     name: Expr,
     return_type: Option<Expr>,
     options: Vec<(Key, Option<Expr>)>,
     ignore_case: bool,
-) -> TokenStream {
+) -> proc_macro::TokenStream {
+    let lookup_32 = build_lookup::<u32>(&name, return_type.as_ref(), &options, ignore_case);
+    let lookup_64 = build_lookup::<u64>(&name, return_type.as_ref(), &options, ignore_case);
+
+    match (lookup_32, lookup_64) {
+        (Some(lookup_32), Some(lookup_64)) => quote! {{
+            #[cfg(target_pointer_width = "64")]
+            let __value = #lookup_64;
+            #[cfg(not(target_pointer_width = "64"))]
+            let __value = #lookup_32;
+            __value
+        }},
+        (Some(lookup), None) | (None, Some(lookup)) => lookup,
+        (None, None) => quote! { compile_error!("failed to resolve hash collision") },
+    }
+    .into()
+}
+
+fn build_lookup<H: PhfHash>(
+    name: &Expr,
+    return_type: Option<&Expr>,
+    keys: &[(Key, Option<Expr>)],
+    ignore_case: bool,
+) -> Option<TokenStream> {
     let Phf {
         seed,
         pilots_table,
         map,
         free,
-        keys,
-    } = generate_phf(options);
+    } = generate_phf::<H>(keys)?;
 
     let mut min_key_size = usize::MAX;
     let mut max_key_size = 0;
 
+    let hash_type = H::type_name();
+    let key_prime = H::KEY_PRIME;
+    let pilot_prime = H::PILOT_PRIME;
     let keys_len = keys.len();
-    let pilots_len = pilots_table.len();
-    let codomain_len = (keys.len() + free.len()) as u64;
-    let pilots_array = pilots_table.iter().map(|x| quote!(#x));
-    let free_array = free.iter().map(|x| quote!(#x));
+    let pilots_len = H::from_len(pilots_table.len());
+    let codomain_len = H::from_len(keys.len() + free.len());
     let keys_array = map.iter().map(|idx| {
         let (key, return_type) = &keys[*idx as usize];
 
@@ -94,18 +117,18 @@ pub fn build_map(
         quote! { c }
     };
 
-    TokenStream::from(quote! {{
-       static PILOTS_TABLE: &[u16] = &[#(#pilots_array),*];
-       static FREE: &[u32] = &[#(#free_array),*];
+    Some(quote! {{
+       static PILOTS_TABLE: &[u16] = &[#(#pilots_table),*];
+       static FREE: &[u32] = &[#(#free),*];
        static KEYS: #keys_def = &[#(#keys_array),*];
 
        let __key = #name;
 
        if (#min_key_size..=#max_key_size).contains(&__key.len()) {
             let key_hash = __key.iter().fold(#seed, |h, &c| {
-                h.wrapping_mul(0x0100_0000_01b3).wrapping_add(#c as u64)
+                h.wrapping_mul(#key_prime).wrapping_add(#c as #hash_type)
             });
-            let pilot_hash = (PILOTS_TABLE[key_hash as usize % #pilots_len] as u64).wrapping_mul( 0x517cc1b727220a95);
+            let pilot_hash = (PILOTS_TABLE[(key_hash % #pilots_len) as usize] as #hash_type).wrapping_mul(#pilot_prime);
             let idx = ((key_hash ^ pilot_hash) % #codomain_len) as usize;
 
             let value = if idx < #keys_len {
@@ -133,93 +156,121 @@ use crate::Key;
 
 const MAX_ALPHA: f64 = 0.99;
 const MIN_C: f64 = 1.5;
-
-#[inline]
-fn ilog2(n: u64) -> u32 {
-    63 - n.leading_zeros()
-}
+const MAX_SEED_ATTEMPTS: u32 = 16;
 
 /// Parameters for a PTHash perfect hash function.
-pub struct Phf {
-    pub seed: u64,
+pub struct Phf<H> {
+    pub seed: H,
     pub pilots_table: Vec<u16>,
     pub map: Vec<u32>,
     pub free: Vec<u32>,
-    pub keys: Vec<(Key, Option<Expr>)>,
 }
 
-#[inline]
-pub fn hash_key(key: &[u8], seed: u64) -> u64 {
-    key.iter().fold(seed, |h, b| {
-        h.wrapping_mul(0x0100_0000_01b3).wrapping_add(*b as u64)
-    })
+pub trait PhfHash: Copy + Ord + ToTokens {
+    const KEY_PRIME: Self;
+    const PILOT_PRIME: Self;
+
+    fn type_name() -> Ident;
+    fn from_len(len: usize) -> Self;
+    fn seed(attempt: u32) -> Self;
+    fn hash_key(key: &[u8], seed: Self) -> Self;
+    fn hash_pilot_value(pilot_value: u16) -> Self;
+    fn bucket(self, buckets_len: usize) -> usize;
+    fn index(self, pilot_hash: Self, codomain_len: usize) -> usize;
 }
 
-#[inline]
-pub fn hash_pilot_value(pilot_value: u16) -> u64 {
-    (pilot_value as u64).wrapping_mul(0x517cc1b727220a95)
+macro_rules! impl_phf_hash {
+    ($hash:ident, $key_prime:literal, $pilot_prime:literal, $seed_shift:literal) => {
+        impl PhfHash for $hash {
+            const KEY_PRIME: Self = $key_prime;
+            const PILOT_PRIME: Self = $pilot_prime;
+
+            fn type_name() -> Ident {
+                Ident::new(stringify!($hash), Span::call_site())
+            }
+
+            fn from_len(len: usize) -> Self {
+                len as Self
+            }
+
+            fn seed(attempt: u32) -> Self {
+                Self::from(attempt) << $seed_shift
+            }
+
+            #[inline]
+            fn hash_key(key: &[u8], seed: Self) -> Self {
+                key.iter().fold(seed, |h, b| {
+                    h.wrapping_mul(Self::KEY_PRIME).wrapping_add(*b as Self)
+                })
+            }
+
+            #[inline]
+            fn hash_pilot_value(pilot_value: u16) -> Self {
+                Self::from(pilot_value).wrapping_mul(Self::PILOT_PRIME)
+            }
+
+            #[inline]
+            fn bucket(self, buckets_len: usize) -> usize {
+                (self % Self::from_len(buckets_len)) as usize
+            }
+
+            #[inline]
+            fn index(self, pilot_hash: Self, codomain_len: usize) -> usize {
+                ((self ^ pilot_hash) % Self::from_len(codomain_len)) as usize
+            }
+        }
+    };
 }
 
-#[inline]
-pub fn get_bucket(key_hash: u64, buckets: u64) -> usize {
-    (key_hash % buckets) as usize
-}
-
-#[inline]
-pub fn get_index(key_hash: u64, pilot_hash: u64, codomain_len: u64) -> usize {
-    ((key_hash ^ pilot_hash) % codomain_len) as usize
-}
+impl_phf_hash!(u64, 0x0100_0000_01b3, 0x517cc1b727220a95, 32);
+impl_phf_hash!(u32, 0x01000193, 0x9e3779b9, 28);
 
 /// Generate a perfect hash function using PTHash for the given collection of keys.
 ///
 /// # Panics
 ///
 /// Panics if `entries` contains a duplicate key.
-pub fn generate_phf(keys: Vec<(Key, Option<Expr>)>) -> Phf {
+pub fn generate_phf<H: PhfHash>(keys: &[(Key, Option<Expr>)]) -> Option<Phf<H>> {
     if keys.is_empty() {
-        return Phf {
-            seed: 0,
+        return Some(Phf {
+            seed: H::seed(0),
             map: vec![],
             // These vectors have to be non-empty so that the number of buckets and codomain
             // length are non-zero, and thus can be used as divisors.
             pilots_table: vec![0],
             free: vec![0],
-            keys: vec![],
-        };
+        });
     }
 
-    let n = keys.len() as u64;
-    let lg = ilog2(n) as f64;
+    let n = keys.len();
+    let lg = n.ilog2() as f64;
     let c = MIN_C + 0.2 * lg;
     let buckets_len = if n > 1 {
-        ((c * n as f64) / lg).ceil() as u64
+        ((c * n as f64) / lg).ceil() as usize
     } else {
         1
     };
 
     let alpha = MAX_ALPHA - 0.001 * lg;
     let codomain_len = {
-        let candidate = (n as f64 / alpha).ceil() as u64;
+        let candidate = (n as f64 / alpha).ceil() as usize;
         candidate + (1 - candidate % 2)
     };
 
-    let mut phf = (1..)
-        .find_map(|n| try_generate_phf(&keys, buckets_len, codomain_len, n << 32))
-        .expect("failed to resolve hash collision");
-    phf.keys = keys;
-    phf
+    (1..=MAX_SEED_ATTEMPTS)
+        .find_map(|attempt| try_generate_phf(keys, buckets_len, codomain_len, H::seed(attempt)))
 }
 
-fn try_generate_phf(
+fn try_generate_phf<H: PhfHash>(
     entries: &[(Key, Option<Expr>)],
-    buckets_len: u64,
-    codomain_len: u64,
-    seed: u64,
-) -> Option<Phf> {
+    buckets_len: usize,
+    codomain_len: usize,
+    seed: H,
+) -> Option<Phf<H>> {
     // We begin by hashing the entries, assigning them to buckets, and checking for collisions.
-    struct HashedEntry {
+    struct HashedEntry<T> {
         idx: usize,
-        hash: u64,
+        hash: T,
         bucket: usize,
     }
 
@@ -227,8 +278,8 @@ fn try_generate_phf(
         .iter()
         .enumerate()
         .map(|(idx, (entry, _))| {
-            let hash = hash_key(entry.as_bytes(), seed);
-            let bucket = get_bucket(hash, buckets_len);
+            let hash = H::hash_key(entry.as_bytes(), seed);
+            let bucket = hash.bucket(buckets_len);
 
             HashedEntry { idx, hash, bucket }
         })
@@ -258,10 +309,10 @@ fn try_generate_phf(
         size: usize,
     }
 
-    let mut buckets = Vec::with_capacity(buckets_len as usize);
+    let mut buckets = Vec::with_capacity(buckets_len);
 
     let mut start_idx = 0;
-    for idx in 0..buckets_len as usize {
+    for idx in 0..buckets_len {
         let size = hashed_entries[start_idx..]
             .iter()
             .take_while(|entry| entry.bucket == idx)
@@ -277,14 +328,14 @@ fn try_generate_phf(
 
     buckets.sort_unstable_by(|b1, b2| b1.size.cmp(&b2.size).reverse());
 
-    let mut pilots_table = vec![0; buckets_len as usize];
+    let mut pilots_table = vec![0; buckets_len];
 
     // Using a sentinel value instead of an Option here allows us to avoid an expensive
     // reallocation. This is fine since the compiler cannot handle a static map with more than
     // a few million entries anyway.
     assert!((entries.len() as u64) < (u32::MAX as u64));
     const EMPTY: u32 = u32::MAX;
-    let mut map = vec![EMPTY; codomain_len as usize];
+    let mut map = vec![EMPTY; codomain_len];
 
     let mut values_to_add = Vec::new();
     for bucket in buckets {
@@ -296,13 +347,13 @@ fn try_generate_phf(
 
         'pilots: for pilot in 0u16..=u16::MAX {
             values_to_add.clear();
-            let pilot_hash = hash_pilot_value(pilot);
+            let pilot_hash = H::hash_pilot_value(pilot);
 
             // Check for collisions with items from previous buckets.
             for entry in bucket_entries {
-                let destination = get_index(entry.hash, pilot_hash, codomain_len);
+                let destination = entry.hash.index(pilot_hash, codomain_len);
 
-                if map[destination as usize] != EMPTY {
+                if map[destination] != EMPTY {
                     continue 'pilots;
                 }
 
@@ -333,7 +384,7 @@ fn try_generate_phf(
     // At this point `map` is a table of size `n_prime`, but with `n` values.
     // We need to move the items from the back into the empty slots at the
     // front, and compute the vector `free` that will point to their new locations.
-    let extra_slots = codomain_len as usize - entries.len();
+    let extra_slots = codomain_len - entries.len();
     let mut free = vec![0; extra_slots];
 
     let mut back_idx = entries.len();
@@ -354,7 +405,6 @@ fn try_generate_phf(
     map.truncate(entries.len());
 
     Some(Phf {
-        keys: vec![],
         seed,
         pilots_table,
         map,

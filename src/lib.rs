@@ -5,18 +5,10 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-#[cfg(any(target_pointer_width = "32", feature = "force-32bit"))]
-mod large_32;
-#[cfg(any(target_pointer_width = "32", feature = "force-32bit"))]
-use large_32::build_map;
-
-#[cfg(all(target_pointer_width = "64", not(feature = "force-32bit")))]
 mod large;
-#[cfg(all(target_pointer_width = "64", not(feature = "force-32bit")))]
-use large::build_map;
-
 mod tiny;
 
+use large::build_map;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use syn::punctuated::Punctuated;
@@ -354,18 +346,18 @@ impl ParsedKey {
                     // we've lost the sign at this point, so `-128i8` looks like `128i8`,
                     // which doesn't fit in an `i8`; parse it as a `u8` and cast (to `0i8`),
                     // which is handled below, by `Unary`
-                    "i8" => Some(ParsedKey::I8(s.base10_parse::<u8>().unwrap() as i8)),
-                    "i16" => Some(ParsedKey::I16(s.base10_parse::<u16>().unwrap() as i16)),
-                    "i32" => Some(ParsedKey::I32(s.base10_parse::<u32>().unwrap() as i32)),
-                    "i64" => Some(ParsedKey::I64(s.base10_parse::<u64>().unwrap() as i64)),
-                    "i128" => Some(ParsedKey::I128(s.base10_parse::<u128>().unwrap() as i128)),
-                    "isize" => Some(ParsedKey::Isize(s.base10_parse::<usize>().unwrap() as isize)),
-                    "u8" => Some(ParsedKey::U8(s.base10_parse::<u8>().unwrap())),
-                    "u16" => Some(ParsedKey::U16(s.base10_parse::<u16>().unwrap())),
-                    "u32" => Some(ParsedKey::U32(s.base10_parse::<u32>().unwrap())),
-                    "u64" => Some(ParsedKey::U64(s.base10_parse::<u64>().unwrap())),
-                    "u128" => Some(ParsedKey::U128(s.base10_parse::<u128>().unwrap())),
-                    "usize" => Some(ParsedKey::Usize(s.base10_parse::<usize>().unwrap())),
+                    "i8" => Some(ParsedKey::I8(s.base10_parse::<u8>().ok()? as i8)),
+                    "i16" => Some(ParsedKey::I16(s.base10_parse::<u16>().ok()? as i16)),
+                    "i32" => Some(ParsedKey::I32(s.base10_parse::<u32>().ok()? as i32)),
+                    "i64" => Some(ParsedKey::I64(s.base10_parse::<u64>().ok()? as i64)),
+                    "i128" => Some(ParsedKey::I128(s.base10_parse::<u128>().ok()? as i128)),
+                    "isize" => Some(ParsedKey::Isize(s.base10_parse::<usize>().ok()? as isize)),
+                    "u8" => Some(ParsedKey::U8(s.base10_parse::<u8>().ok()?)),
+                    "u16" => Some(ParsedKey::U16(s.base10_parse::<u16>().ok()?)),
+                    "u32" => Some(ParsedKey::U32(s.base10_parse::<u32>().ok()?)),
+                    "u64" => Some(ParsedKey::U64(s.base10_parse::<u64>().ok()?)),
+                    "u128" => Some(ParsedKey::U128(s.base10_parse::<u128>().ok()?)),
+                    "usize" => Some(ParsedKey::Usize(s.base10_parse::<usize>().ok()?)),
                     _ => None,
                 },
                 Lit::Bool(s) => Some(ParsedKey::Bool(s.value)),
@@ -377,7 +369,7 @@ impl ParsedKey {
                     match expr {
                         Expr::Lit(lit) => match &lit.lit {
                             Lit::Int(s) => match s.suffix() {
-                                "u8" | "" => buf.push(s.base10_parse::<u8>().unwrap()),
+                                "u8" | "" => buf.push(s.base10_parse::<u8>().ok()?),
                                 _ => return None,
                             },
                             _ => return None,

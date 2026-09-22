@@ -41,6 +41,15 @@ pub fn build_tiny_map(
     default: Value,
     ignore_case: bool,
 ) -> TokenStream {
+    let mut seen_keys = HashSet::with_capacity(options.len());
+    if let Some((key, _)) = options.iter().find(|(key, _)| !seen_keys.insert(*key)) {
+        let message = format!(
+            "duplicate key {:?}",
+            String::from_utf8_lossy(key.as_bytes())
+        );
+        return TokenStream::from(quote! { compile_error!(#message) });
+    }
+
     let mut map: IndexMap<usize, Vec<(&Key, Value)>> = IndexMap::new();
     let mut min_key_size = usize::MAX;
     let mut max_key_size = 0;
@@ -73,7 +82,13 @@ pub fn build_tiny_map(
     };
 
     // Try building a simple lookup table
-    if let Some(table) = try_hash(&options, &default, min_key_size, false, ignore_case) {
+    let simple_table = if min_key_size == 1 && max_key_size > 1 {
+        None
+    } else {
+        try_hash(&options, &default, min_key_size, false, ignore_case)
+    };
+
+    if let Some(table) = simple_table {
         let else_cond = if !matches!(default, Value::Expr(_)) {
             quote! {
                 else {

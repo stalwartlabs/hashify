@@ -83,7 +83,6 @@ fn main() {
 Function maps:
 
 ```rust
-fn main() {
     hashify::fnc_map_ignore_case!(input.as_bytes(),
         "ALL" => {
             println!("All");
@@ -101,7 +100,6 @@ fn main() {
             eprintln!("Unknown command {input}");
         }
     );
-}
 ```
 
 ## Testing, Fuzzing & Benchmarking

@@ -7419,3 +7419,41 @@ fn main() {
         );
     }
 }
+
+#[test]
+fn single_byte_keys_mixed_with_longer_keys() {
+    fn tiny_map(input: &[u8]) -> Option<u32> {
+        hashify::tiny_map! { input, "a" => 1, "bcd" => 2, }
+    }
+    fn tiny_map_lc(input: &[u8]) -> Option<u32> {
+        hashify::tiny_map_ignore_case! { input, "a" => 1, "bcd" => 2, }
+    }
+    fn tiny_set(input: &[u8]) -> bool {
+        hashify::tiny_set! { input, "a", "bcd", }
+    }
+
+    assert_eq!(tiny_map(b"a"), Some(1));
+    assert_eq!(tiny_map(b"bcd"), Some(2));
+    assert_eq!(tiny_map(b"ab"), None);
+    assert_eq!(tiny_map(b"axy"), None);
+    assert_eq!(tiny_map_lc(b"A"), Some(1));
+    assert_eq!(tiny_map_lc(b"AB"), None);
+    assert!(tiny_set(b"a"));
+    assert!(!tiny_set(b"ab"));
+}
+
+#[test]
+fn keys_colliding_under_32_bit_hash() {
+    fn lookup(input: &str) -> Option<&u32> {
+        hashify::map! {
+            input.as_bytes(),
+            u32,
+            "fbvfgsfy" => 1,
+            "rkeikopn" => 2,
+        }
+    }
+
+    assert_eq!(lookup("fbvfgsfy"), Some(&1));
+    assert_eq!(lookup("rkeikopn"), Some(&2));
+    assert_eq!(lookup("fbvfgsfz"), None);
+}
