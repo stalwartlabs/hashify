@@ -12,6 +12,7 @@ const BUCKET_SIZES_IN_TENTHS: [u64; 5] = [30, 25, 20, 15, 10];
 const SEEDS_PER_CONFIG: u32 = 3;
 const RECENT_BUCKETS: usize = 16;
 const EMPTY: u32 = u32::MAX;
+const MIN_EVICTION_COST: usize = 1;
 const FLAT_ATTEMPTS: u32 = 16384;
 const FLAT_MAX_COLLIDING_PAIRS_PER_SLOT_IN_MILLIONTHS: u64 = 8_317_766;
 const FLAT_MAX_GROWTH: usize = 8;
@@ -96,24 +97,35 @@ struct Placement<H> {
 
 impl<H: HashWord> Placement<H> {
     fn new(hashes: &[H], buckets_len: usize, slots_len: usize) -> Option<Self> {
-        let mut sorted: Vec<(usize, H, u32)> = hashes
-            .iter()
-            .zip(0..)
-            .map(|(&hash, idx)| (hash.bucket(buckets_len), hash, idx))
-            .collect();
-        sorted.sort_unstable();
-        if sorted.windows(2).any(|pair| pair[0].1 == pair[1].1) {
-            return None;
-        }
-
+        let buckets: Vec<usize> = hashes.iter().map(|hash| hash.bucket(buckets_len)).collect();
         let mut starts = vec![0u32; buckets_len + 1];
-        for &(bucket, _, _) in &sorted {
+        for &bucket in &buckets {
             starts[bucket + 1] += 1;
         }
         for bucket in 0..buckets_len {
             starts[bucket + 1] += starts[bucket];
         }
-        let (keys, hashes) = sorted.into_iter().map(|(_, hash, idx)| (idx, hash)).unzip();
+
+        let mut next = starts.clone();
+        let mut order = vec![0u32; hashes.len()];
+        for (&bucket, idx) in buckets.iter().zip(0..) {
+            order[next[bucket] as usize] = idx;
+            next[bucket] += 1;
+        }
+        let mut sorted: Vec<(H, u32)> = order
+            .into_iter()
+            .map(|idx| (hashes[idx as usize], idx))
+            .collect();
+        for bounds in starts.windows(2) {
+            let bucket = &mut sorted[bounds[0] as usize..bounds[1] as usize];
+            if bucket.len() > 1 {
+                bucket.sort_unstable();
+                if bucket.windows(2).any(|pair| pair[0].0 == pair[1].0) {
+                    return None;
+                }
+            }
+        }
+        let (hashes, keys) = sorted.into_iter().unzip();
 
         Some(Placement {
             keys,
@@ -129,18 +141,38 @@ impl<H: HashWord> Placement<H> {
         self.starts[bucket] as usize..self.starts[bucket + 1] as usize
     }
 
+    fn size(&self, bucket: u32) -> usize {
+        let bucket = bucket as usize;
+        (self.starts[bucket + 1] - self.starts[bucket]) as usize
+    }
+
     fn free_pilot(&self, bucket: u32, slots: &mut Vec<usize>) -> Option<u8> {
         let hashes = &self.hashes[self.range(bucket)];
-        let slots_len = self.owners.len();
-        (0..=u8::MAX).find(|&pilot| {
+        let owners = self.owners.as_slice();
+        let slots_len = owners.len();
+        if let [hash] = hashes {
             slots.clear();
-            hashes.iter().all(|hash| {
+            for pilot in 0..=u8::MAX {
                 let slot = hash.slot(pilot, slots_len);
-                let free = self.owners[slot] == EMPTY && !slots.contains(&slot);
+                if owners[slot] == EMPTY {
+                    slots.push(slot);
+                    return Some(pilot);
+                }
+            }
+            return None;
+        }
+        'pilots: for pilot in 0..=u8::MAX {
+            slots.clear();
+            for hash in hashes {
+                let slot = hash.slot(pilot, slots_len);
+                if owners[slot] != EMPTY || slots.contains(&slot) {
+                    continue 'pilots;
+                }
                 slots.push(slot);
-                free
-            })
-        })
+            }
+            return Some(pilot);
+        }
+        None
     }
 
     fn cheapest_pilot(
@@ -151,8 +183,27 @@ impl<H: HashWord> Placement<H> {
         victims: &mut Vec<u32>,
     ) -> Option<u8> {
         let hashes = &self.hashes[self.range(bucket)];
-        let slots_len = self.owners.len();
+        let owners = self.owners.as_slice();
+        let slots_len = owners.len();
         let mut best: Option<(usize, u8)> = None;
+        if let [hash] = hashes {
+            for pilot in 0..=u8::MAX {
+                let owner = owners[hash.slot(pilot, slots_len)];
+                if owner == EMPTY {
+                    return Some(pilot);
+                }
+                let size = self.size(owner);
+                let cost = size * size;
+                if best.is_some_and(|(best_cost, _)| cost >= best_cost) || recent.contains(&owner) {
+                    continue;
+                }
+                if cost == MIN_EVICTION_COST {
+                    return Some(pilot);
+                }
+                best = Some((cost, pilot));
+            }
+            return best.map(|(_, pilot)| pilot);
+        }
         'pilots: for pilot in 0..=u8::MAX {
             slots.clear();
             for hash in hashes {
@@ -165,15 +216,19 @@ impl<H: HashWord> Placement<H> {
             victims.clear();
             let mut cost = 0;
             for &slot in slots.iter() {
-                let owner = self.owners[slot];
+                let owner = owners[slot];
                 if owner == EMPTY || victims.contains(&owner) {
                     continue;
                 }
-                if recent.contains(&owner) {
+                let size = self.size(owner);
+                cost += size * size;
+                if best.is_some_and(|(best_cost, _)| cost >= best_cost) || recent.contains(&owner) {
                     continue 'pilots;
                 }
-                cost += self.range(owner).len().pow(2);
                 victims.push(owner);
+            }
+            if cost == MIN_EVICTION_COST {
+                return Some(pilot);
             }
             if best.is_none_or(|(best_cost, _)| cost < best_cost) {
                 best = Some((cost, pilot));
@@ -201,7 +256,7 @@ impl<H: HashWord> Placement<H> {
         let buckets_len = self.pilots.len();
         let max_evictions = self.hashes.len() / 4 + 1024;
         let mut queue: BinaryHeap<(usize, u32)> = (0..buckets_len as u32)
-            .map(|bucket| (self.range(bucket).len(), bucket))
+            .map(|bucket| (self.size(bucket), bucket))
             .filter(|&(size, _)| size > 0)
             .collect();
         let mut recent = [EMPTY; RECENT_BUCKETS];
@@ -221,7 +276,7 @@ impl<H: HashWord> Placement<H> {
                         let owner = self.owners[slot];
                         if owner != EMPTY {
                             self.evict(owner);
-                            queue.push((self.range(owner).len(), owner));
+                            queue.push((self.size(owner), owner));
                             evictions += 1;
                         }
                     }

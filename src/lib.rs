@@ -113,7 +113,7 @@ impl Parse for KeyValue {
     fn parse(input: ParseStream) -> Result<Self> {
         let key: Key = input.parse()?;
         input.parse::<Token![=>]>()?;
-        let value: Expr = input.parse()?;
+        let value = parse_expr(input)?;
         Ok(KeyValue { key, value })
     }
 }
@@ -125,13 +125,22 @@ struct Key {
 
 impl Parse for Key {
     fn parse(input: ParseStream) -> Result<Self> {
-        let key: Expr = input.parse()?;
+        let key = parse_expr(input)?;
         let parsed = ParsedKey::from_expr(&key)
             .ok_or_else(|| Error::new_spanned(&key, "unsupported key expression"))?;
 
         Ok(Key {
             bytes: parsed.into_bytes(),
         })
+    }
+}
+
+fn parse_expr(input: ParseStream) -> Result<Expr> {
+    match input.cursor().literal() {
+        Some((_, rest)) if rest.eof() || input.peek2(Token![,]) || input.peek2(Token![=>]) => {
+            input.parse().map(Expr::Lit)
+        }
+        _ => input.parse(),
     }
 }
 
