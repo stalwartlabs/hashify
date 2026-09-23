@@ -3,6 +3,7 @@ name = "hashify"
 version = "0.3.0"
 description = "Fast perfect hashing without dependencies"
 edition = "2024"
+rust-version = "1.88"
 authors = [ "Stalwart Labs <hello@stalw.art>"]
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/stalwartlabs/hashify"
@@ -20,7 +21,6 @@ doctest = false
 syn = { version = "3.0", features = ["full"] }
 quote = "1.0"
 proc-macro2 = "1.0"
-indexmap = "2.14.2"
 
 [dev-dependencies]
 criterion = "0.8"

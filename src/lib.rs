@@ -5,20 +5,16 @@
  * SPDX-License-Identifier: Apache-2.0 OR MIT
  */
 
-mod large;
-mod tiny;
-
-use large::build_map;
+mod lookup;
+use lookup::{Lookup, Payload};
 use proc_macro::TokenStream;
-use proc_macro2::Span;
 use syn::punctuated::Punctuated;
-use syn::{Error, ExprLit, Lit, LitByteStr, UnOp};
+use syn::{Error, ExprLit, Lit, UnOp};
 use syn::{
-    Expr, Result, Token,
+    Expr, Result, Token, Type,
     parse::{Parse, ParseStream},
     parse_macro_input,
 };
-use tiny::{Value, build_tiny_map};
 
 enum ParsedKey {
     Str(String),
@@ -41,12 +37,7 @@ enum ParsedKey {
 
 struct MapInput {
     name: Expr,
-    pairs: Punctuated<KeyValue, Token![,]>,
-}
-
-struct BigMapInput {
-    name: Expr,
-    return_type: Expr,
+    value_type: Type,
     pairs: Punctuated<KeyValue, Token![,]>,
 }
 
@@ -58,19 +49,19 @@ struct FncMapInput {
 
 struct SetInput {
     name: Expr,
-    pairs: Punctuated<Key, Token![,]>,
+    keys: Punctuated<Key, Token![,]>,
 }
 
-impl Parse for BigMapInput {
+impl Parse for MapInput {
     fn parse(input: ParseStream) -> Result<Self> {
         let name: Expr = input.parse()?;
         input.parse::<Token![,]>()?;
-        let return_type: Expr = input.parse()?;
+        let value_type: Type = input.parse()?;
         input.parse::<Token![,]>()?;
         let pairs = input.parse_terminated(KeyValue::parse, Token![,])?;
-        Ok(BigMapInput {
+        Ok(MapInput {
             name,
-            return_type,
+            value_type,
             pairs,
         })
     }
@@ -92,6 +83,9 @@ impl Parse for FncMapInput {
         input.parse::<Token![_]>()?;
         input.parse::<Token![=>]>()?;
         let default: Expr = input.parse()?;
+        if input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+        }
 
         Ok(FncMapInput {
             name,
@@ -101,21 +95,12 @@ impl Parse for FncMapInput {
     }
 }
 
-impl Parse for MapInput {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let name: Expr = input.parse()?;
-        input.parse::<Token![,]>()?;
-        let pairs = input.parse_terminated(KeyValue::parse, Token![,])?;
-        Ok(MapInput { name, pairs })
-    }
-}
-
 impl Parse for SetInput {
     fn parse(input: ParseStream) -> Result<Self> {
         let name: Expr = input.parse()?;
         input.parse::<Token![,]>()?;
-        let pairs = input.parse_terminated(Key::parse, Token![,])?;
-        Ok(SetInput { name, pairs })
+        let keys = input.parse_terminated(Key::parse, Token![,])?;
+        Ok(SetInput { name, keys })
     }
 }
 
@@ -150,187 +135,88 @@ impl Parse for Key {
     }
 }
 
+fn expand<'x>(
+    name: &Expr,
+    keys: impl Iterator<Item = &'x Key>,
+    payload: Payload<'_>,
+    ignore_case: bool,
+) -> TokenStream {
+    let lowercase: Vec<Key>;
+    let keys: Vec<&[u8]> = if ignore_case {
+        lowercase = keys.map(Key::to_lowercase).collect();
+        lowercase.iter().map(Key::as_bytes).collect()
+    } else {
+        keys.map(Key::as_bytes).collect()
+    };
+    Lookup::new(keys, payload, ignore_case)
+        .map_or_else(|error| error, |lookup| lookup.expand(name))
+        .into()
+}
+
+impl MapInput {
+    fn expand(&self, ignore_case: bool) -> TokenStream {
+        let payload = Payload::Value {
+            ty: &self.value_type,
+            values: self.pairs.iter().map(|pair| &pair.value).collect(),
+        };
+        expand(
+            &self.name,
+            self.pairs.iter().map(|pair| &pair.key),
+            payload,
+            ignore_case,
+        )
+    }
+}
+
+impl SetInput {
+    fn expand(&self, ignore_case: bool) -> TokenStream {
+        expand(&self.name, self.keys.iter(), Payload::Presence, ignore_case)
+    }
+}
+
+impl FncMapInput {
+    fn expand(&self, ignore_case: bool) -> TokenStream {
+        let payload = Payload::Arms {
+            arms: self.pairs.iter().map(|pair| &pair.value).collect(),
+            default: &self.default,
+        };
+        expand(
+            &self.name,
+            self.pairs.iter().map(|pair| &pair.key),
+            payload,
+            ignore_case,
+        )
+    }
+}
+
 #[proc_macro]
 pub fn map(input: TokenStream) -> TokenStream {
-    let BigMapInput {
-        name,
-        return_type,
-        pairs,
-    } = parse_macro_input!(input);
-
-    build_map(
-        name,
-        return_type.into(),
-        pairs
-            .into_pairs()
-            .map(|kv| {
-                let kv = kv.into_value();
-                (kv.key, Some(kv.value))
-            })
-            .collect(),
-        false,
-    )
+    parse_macro_input!(input as MapInput).expand(false)
 }
 
 #[proc_macro]
 pub fn map_ignore_case(input: TokenStream) -> TokenStream {
-    let BigMapInput {
-        name,
-        return_type,
-        pairs,
-    } = parse_macro_input!(input);
-
-    build_map(
-        name,
-        return_type.into(),
-        pairs
-            .into_pairs()
-            .map(|kv| {
-                let kv = kv.into_value();
-                (kv.key.to_lowercase(), Some(kv.value))
-            })
-            .collect(),
-        true,
-    )
+    parse_macro_input!(input as MapInput).expand(true)
 }
 
 #[proc_macro]
 pub fn set(input: TokenStream) -> TokenStream {
-    let SetInput { name, pairs } = parse_macro_input!(input);
-
-    build_map(
-        name,
-        None,
-        pairs
-            .into_pairs()
-            .map(|kv| (kv.into_value(), None))
-            .collect(),
-        false,
-    )
+    parse_macro_input!(input as SetInput).expand(false)
 }
 
 #[proc_macro]
 pub fn set_ignore_case(input: TokenStream) -> TokenStream {
-    let SetInput { name, pairs } = parse_macro_input!(input);
-
-    build_map(
-        name,
-        None,
-        pairs
-            .into_pairs()
-            .map(|kv| (kv.into_value().to_lowercase(), None))
-            .collect(),
-        true,
-    )
-}
-
-#[proc_macro]
-pub fn tiny_map(input: TokenStream) -> TokenStream {
-    let MapInput { name, pairs } = parse_macro_input!(input);
-
-    build_tiny_map(
-        name,
-        pairs
-            .iter()
-            .map(|kv| (&kv.key, Value::Some(&kv.value)))
-            .collect::<Vec<_>>(),
-        Value::None,
-        false,
-    )
-}
-
-#[proc_macro]
-pub fn tiny_map_ignore_case(input: TokenStream) -> TokenStream {
-    let MapInput { name, pairs } = parse_macro_input!(input);
-    let lower_pairs = pairs
-        .iter()
-        .map(|kv| (kv.key.to_lowercase(), &kv.value))
-        .collect::<Vec<_>>();
-
-    build_tiny_map(
-        name,
-        lower_pairs
-            .iter()
-            .map(|(key, value)| (key, Value::Some(value)))
-            .collect::<Vec<_>>(),
-        Value::None,
-        true,
-    )
+    parse_macro_input!(input as SetInput).expand(true)
 }
 
 #[proc_macro]
 pub fn fnc_map(input: TokenStream) -> TokenStream {
-    let FncMapInput {
-        name,
-        default,
-        pairs,
-    } = parse_macro_input!(input);
-
-    build_tiny_map(
-        name,
-        pairs
-            .iter()
-            .map(|kv| (&kv.key, Value::Expr(&kv.value)))
-            .collect::<Vec<_>>(),
-        Value::Expr(&default),
-        false,
-    )
+    parse_macro_input!(input as FncMapInput).expand(false)
 }
 
 #[proc_macro]
 pub fn fnc_map_ignore_case(input: TokenStream) -> TokenStream {
-    let FncMapInput {
-        name,
-        default,
-        pairs,
-    } = parse_macro_input!(input);
-
-    let lower_pairs = pairs
-        .iter()
-        .map(|kv| (kv.key.to_lowercase(), &kv.value))
-        .collect::<Vec<_>>();
-
-    build_tiny_map(
-        name,
-        lower_pairs
-            .iter()
-            .map(|(key, value)| (key, Value::Expr(value)))
-            .collect::<Vec<_>>(),
-        Value::Expr(&default),
-        true,
-    )
-}
-
-#[proc_macro]
-pub fn tiny_set(input: TokenStream) -> TokenStream {
-    let SetInput { name, pairs } = parse_macro_input!(input);
-
-    build_tiny_map(
-        name,
-        pairs.iter().map(|kv| (kv, Value::True)).collect::<Vec<_>>(),
-        Value::False,
-        false,
-    )
-}
-
-#[proc_macro]
-pub fn tiny_set_ignore_case(input: TokenStream) -> TokenStream {
-    let SetInput { name, pairs } = parse_macro_input!(input);
-
-    let lower_pairs = pairs
-        .iter()
-        .map(|key| key.to_lowercase())
-        .collect::<Vec<_>>();
-
-    build_tiny_map(
-        name,
-        lower_pairs
-            .iter()
-            .map(|key| (key, Value::True))
-            .collect::<Vec<_>>(),
-        Value::False,
-        true,
-    )
+    parse_macro_input!(input as FncMapInput).expand(true)
 }
 
 impl ParsedKey {
@@ -443,25 +329,11 @@ impl ParsedKey {
 impl Key {
     fn to_lowercase(&self) -> Key {
         Key {
-            bytes: self.bytes.iter().map(|b| b.to_ascii_lowercase()).collect(),
+            bytes: self.bytes.to_ascii_lowercase(),
         }
     }
 
     fn as_bytes(&self) -> &[u8] {
         &self.bytes
-    }
-
-    fn len(&self) -> usize {
-        self.bytes.len()
-    }
-}
-
-impl quote::ToTokens for Key {
-    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        let byte_str = LitByteStr::new(&self.bytes, Span::call_site());
-
-        tokens.extend(quote::quote! {
-            #byte_str
-        });
     }
 }
