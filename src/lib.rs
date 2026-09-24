@@ -9,6 +9,7 @@ mod lookup;
 use lookup::{Lookup, Payload};
 use proc_macro::TokenStream;
 use syn::punctuated::Punctuated;
+use syn::token;
 use syn::{Error, ExprLit, Lit, UnOp};
 use syn::{
     Expr, Result, Token, Type,
@@ -137,7 +138,10 @@ impl Parse for Key {
 
 fn parse_expr(input: ParseStream) -> Result<Expr> {
     match input.cursor().literal() {
-        Some((_, rest)) if rest.eof() || input.peek2(Token![,]) || input.peek2(Token![=>]) => {
+        Some((_, rest))
+            if !input.peek(token::Group)
+                && (rest.eof() || input.peek2(Token![,]) || input.peek2(Token![=>])) =>
+        {
             input.parse().map(Expr::Lit)
         }
         _ => input.parse(),
