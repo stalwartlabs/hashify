@@ -424,6 +424,8 @@ mod tests {
     fn narrow_hashes_are_skipped_past_the_birthday_bound() {
         assert!(u32::fits(1 << 18));
         assert!(!u32::fits((1 << 18) + 1));
+        // 2^34 keys do not fit in a 32-bit usize.
+        #[cfg(target_pointer_width = "64")]
         assert!(u64::fits(1 << 34));
     }
 
