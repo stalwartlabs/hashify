@@ -21,7 +21,7 @@ use quote::ToTokens;
 use switch::{Leaves, Switch};
 use syn::{Expr, LitByteStr, Stmt, Type};
 
-const SWITCH_MAX_KEYS: usize = 16;
+const SWITCH_MAX_KEYS: usize = 3;
 const FLAT_MAX_KEYS: usize = 64;
 const INLINE_DEFAULT_MAX_TOKENS: usize = 16;
 

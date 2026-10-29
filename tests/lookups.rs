@@ -230,6 +230,32 @@ fn map_ignore_case_all_length_classes_hashed() {
 }
 
 #[test]
+fn small_maps_on_both_sides_of_the_switch_limit() {
+    // Issue #6: three keys use the switch, four or more the flat table.
+    fn three(key: &[u8]) -> Option<u8> {
+        hashify::map_ignore_case!(key, u8, "JAN" => 0, "FEB" => 1, "MAR" => 2).copied()
+    }
+    fn four(key: &[u8]) -> Option<u8> {
+        hashify::map_ignore_case!(key, u8, "JAN" => 0, "FEB" => 1, "MAR" => 2, "APR" => 3).copied()
+    }
+    fn twelve(key: &[u8]) -> Option<u8> {
+        hashify::map_ignore_case!(key, u8,
+            "JAN" => 0, "FEB" => 1, "MAR" => 2, "APR" => 3, "MAY" => 4, "JUN" => 5,
+            "JUL" => 6, "AUG" => 7, "SEP" => 8, "OCT" => 9, "NOV" => 10, "DEC" => 11,
+        )
+        .copied()
+    }
+
+    let months = pairs! {
+        b"JAN" => 0, b"FEB" => 1, b"MAR" => 2, b"APR" => 3, b"MAY" => 4, b"JUN" => 5,
+        b"JUL" => 6, b"AUG" => 7, b"SEP" => 8, b"OCT" => 9, b"NOV" => 10, b"DEC" => 11,
+    };
+    check(&months[..3], true, three);
+    check(&months[..4], true, four);
+    check(&months, true, twelve);
+}
+
+#[test]
 fn sets_all_length_classes() {
     fn contains(key: &[u8]) -> bool {
         hashify::set! { key,

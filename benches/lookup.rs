@@ -260,6 +260,12 @@ dataset! {
 }
 
 dataset! {
+    months: u32,
+    "JAN" => 1, "FEB" => 2, "MAR" => 3, "APR" => 4, "MAY" => 5, "JUN" => 6,
+    "JUL" => 7, "AUG" => 8, "SEP" => 9, "OCT" => 10, "NOV" => 11, "DEC" => 12,
+}
+
+dataset! {
     imap: u32,
     "CAPABILITY" => 1, "NOOP" => 2, "LOGOUT" => 3, "STARTTLS" => 4, "AUTHENTICATE" => 5,
     "LOGIN" => 6, "ENABLE" => 7, "SELECT" => 8, "EXAMINE" => 9, "CREATE" => 10,
@@ -2719,6 +2725,7 @@ mod large {
 
 fn bench_lookups(c: &mut Criterion) {
     methods::bench(c);
+    months::bench(c);
     imap::bench(c);
     words::bench(c);
     charsets::bench(c);

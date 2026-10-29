@@ -6,3 +6,4 @@ All notable changes to this project will be documented in this file. This projec
 
 ### Fixed
 - Tests compile on 32-bit targets (#7).
+- Maps and sets of 4 to 16 keys use the flat table instead of a `match` tree, whose jump table mispredicted on random input (#6).

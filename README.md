@@ -6,7 +6,7 @@
 
 _hashify_ is a procedural macro crate that builds perfect hash lookups for maps, sets and match-style dispatch at compile time. The generated code has no runtime dependencies, never allocates and contains no `unsafe` code.
 
-Each invocation picks its own lookup strategy from the number of keys: a `gperf --switch` style decision tree for small sets, a single-hash table for medium sets, and a minimal perfect hash function with 8-bit pilots, derived from [PtrHash](https://arxiv.org/abs/2502.15539) and [PHast](https://arxiv.org/abs/2504.17918), for large ones.
+Each invocation picks its own lookup strategy from the number of keys: a `gperf --switch` style decision tree for up to three keys, a single-hash table for medium sets, and a minimal perfect hash function with 8-bit pilots, derived from [PtrHash](https://arxiv.org/abs/2502.15539) and [PHast](https://arxiv.org/abs/2504.17918), for large ones.
 
 ## Macros
 
@@ -131,8 +131,8 @@ The macro splits the keys by length. Keys of up to 16 bytes are stored in a tabl
 
 Each table uses one of three strategies:
 
-- **Up to 16 keys**: a decision tree of `match` statements on the key length and on one byte, or the XOR of two bytes, that tells the keys apart. This is the approach of `gperf --switch`, and the compiler turns it into jump tables and inline comparisons against constants.
-- **17 to 64 keys**: a flat table. The macro searches for a seed that sends every key to its own slot in a power-of-two table, so a lookup is one multiplication, a shift and one table load.
+- **Up to 3 keys**: a decision tree of `match` statements on the key length and on one byte, or the XOR of two bytes, that tells the keys apart. This is the approach of `gperf --switch`, and the compiler turns it into inline comparisons against constants. With four or more arms the compiler emits a jump table, whose indirect branch mispredicts on almost every lookup when keys arrive in random order, so larger sets use a table.
+- **4 to 64 keys**: a flat table. The macro searches for a seed that sends every key to its own slot in a power-of-two table, so a lookup is one multiplication, a shift and one table load.
 - **More than 64 keys**: a minimal perfect hash function. Keys are grouped into buckets, each bucket stores one byte (its pilot), and a key's slot is computed from its hash and the pilot with two multiply-high operations. The pilot search evicts conflicting buckets the way cuckoo hashing does, which is what lets one byte per bucket suffice. For typical inputs the table ends up with exactly one slot per key. Larger or harder key sets fall back to at most 5% spare slots.
 
 The macro builds a second set of tables from a 32-bit hash and selects it with `#[cfg(target_pointer_width)]`, so 32-bit targets do not pay for 64-bit multiplication.
