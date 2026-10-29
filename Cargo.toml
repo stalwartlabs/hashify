@@ -1,6 +1,6 @@
 [package]
 name = "hashify"
-version = "0.3.1"
+version = "0.3.2"
 description = "Fast perfect hashing without dependencies"
 edition = "2024"
 rust-version = "1.88"
